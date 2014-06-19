@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # coding=latin-1
 '''
 Copyright (C) 2012: W.G. Vree
@@ -17,7 +18,7 @@ except: import xml.etree.ElementTree as E
 import os, sys, types, re
 from fractions import Fraction
 
-VERSION = '50'
+VERSION = '51'
 
 note_ornamentation_map = {        # for notations/, modified from EasyABC
     'ornaments/trill-mark':       'T',
@@ -648,6 +649,7 @@ class Parser:
         s.curalts = {}    # abc-notenames (with voice number) with passing accidentals
         s.stfMap = {}     # xml staff number -> [xml voice number]
         s.clefMap = {}    # xml staff number -> clef
+        s.curStf = {}     # xml voice number -> current xml staff number
 
     def matchSlur (s, type2, n, v2, note2, grace, stopgrace): # match slur number n in voice v2, add abc code to before/after
         if type2 not in ['start', 'stop']: return   # slur type continue has no abc equivalent
@@ -744,7 +746,13 @@ class Parser:
             lyrnum = int (e.get ('number', '1'))
             note.lyrs [lyrnum] = doSyllable (e)
         if chord: s.msc.addChord (noot)
-        else:     s.msc.appendNote (v, note, noot)
+        else:
+            xmlstaff = int (n.findtext ('staff', '1'))
+            if s.curStf [v] != xmlstaff:    # the note should go to another staff
+                dstaff = xmlstaff - s.curStf [v]    # relative new staff number
+                s.curStf [v] = xmlstaff     # remember the new staff for this voice
+                s.msc.appendElem (v, '[I:staff %+d]' % dstaff)  # insert a move before the note
+            s.msc.appendNote (v, note, noot)
         for slur in n.findall ('notations/slur'):   # s.msc.lastnote points to the last real note/chord inserted above
             s.matchSlur (slur.get ('type'), slur.get ('number'), v, s.msc.lastnote, note.grace, stopgrace) # match slur definitions
 
@@ -778,7 +786,14 @@ class Parser:
             if cs in trans: cs += trans[cs]     # patchwork: abcm2ps does not transpose the -8 ...
             if steps: cs += ' transpose=' + str (steps)
             if first: s.clefMap [n] = cs        # clef goes to header (where it is mapped to voices)
-            else: s.msc.appendElemCv (s.stfMap[n], '[K:%s]' % cs)   # clef change to all voices of staff n
+            else:
+                voices = s.stfMap[n]            # clef change to all voices of staff n
+                for v in voices:
+                    if n != s.curStf [v]:       # voice is not at its home staff n
+                        dstaff = n - s.curStf [v]
+                        s.curStf [v] = n        # reset current staff at start of measure to home position
+                        s.msc.appendElem (v, '[I:staff %+d]' % dstaff)
+                    s.msc.appendElem (v, '[K:%s]' % cs)
 
     def doDirection (s, e): # parse a musicXML direction tag
         plcmnt = e.get ('placement')
@@ -937,6 +952,7 @@ class Parser:
             xs.sort ()
             stf = xs[-1][1]     # the winner: staff with most notes of voice v
             s.stfMap[stf] = s.stfMap.get (stf, []) + [v]
+            s.curStf [v] = stf  # current staff of XML voice v
 
     def addStaffMap (s, vvmap): # vvmap: xml voice number -> global abc voice number
         part = [] # default: brace on staffs of one part
