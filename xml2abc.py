@@ -18,7 +18,15 @@ except: import xml.etree.ElementTree as E
 import os, sys, types, re
 from fractions import Fraction
 
-VERSION = '51'
+python3 = sys.version_info.major > 2
+if python3:
+    tupletype = tuple
+    max_int = sys.maxsize
+else:
+    tupletype = types.TupleType
+    max_int = sys.maxint
+
+VERSION = '52'
 
 note_ornamentation_map = {        # for notations/, modified from EasyABC
     'ornaments/trill-mark':       'T',
@@ -98,7 +106,7 @@ class Elem:
 class Counter:
     def inc (s, key, voice): s.counters [key][voice] = s.counters [key].get (voice, 0) + 1
     def clear (s, vnums):  # reset all counters
-        tups = zip (vnums.keys (), len (vnums) * [0])
+        tups = list( zip (vnums.keys (), len (vnums) * [0]))
         s.counters = {'note': dict (tups), 'nopr': dict (tups), 'nopt': dict (tups)}
     def getv (s, key, voice): return s.counters[key][voice]
     def prcnt (s, ip):  # print summary of all non zero counters
@@ -255,8 +263,7 @@ class Music:
                 bn += ib
                 abcOut.add (chunk + ' %%%d' % bn)   # line with barnumer
                 del vn[:ib]         # chop ib bars
-                lyrlines = vl.items ()
-                lyrlines.sort ()    # order the numbered lyric lines for output
+                lyrlines = sorted (vl.items ())     # order the numbered lyric lines for output
                 for n, lyrs in lyrlines:
                     abcOut.add ('w: ' + '|'.join (lyrs[:ib]) + '|')
                     del lyrs[:ib]
@@ -326,8 +333,10 @@ class ABCoutput:
 
     def writeall (s):  # determine the required encoding of the entire ABC output
         str = ''.join (s.outlist)
-        try:    s.outfile.write (str.encode ('latin-1'))    # prefer latin-1
-        except: s.outfile.write (str.encode ('utf-8'))      # fall back to utf if really needed
+        if python3: s.outfile.write (str)
+        else:
+            try:    s.outfile.write (str.encode ('latin-1'))    # prefer latin-1
+            except: s.outfile.write (str.encode ('utf-8'))      # fall back to utf if really needed
         if s.pad: s.outfile.close ()                        # close each file with -o option
         else: s.outfile.write ('\n')                        # add empty line between tunes on stdout
         info ('%s written with %d voices' % (s.fnm, len (s.clefs)), warn=0)
@@ -565,7 +574,7 @@ def bracePart (part):       # put a brace on multistaff part and group voices
     return brace
 
 def prgroupelem (x, gnm, bar, pmap, accVce, accStf):    # collect partnames (accVce) and %%score map (accStf)
-    if type (x) == types.TupleType: # partname-tuple = (part-name, part-abbrev)
+    if type (x) == tupletype:   # partname-tuple = (part-name, part-abbrev)
         y = pmap.pop (0)
         if gnm[0]: x = [n1 + ':' + n2 for n1, n2 in zip (gnm, x)]   # put group-name before part-name
         accVce.append (x)
@@ -589,7 +598,7 @@ def prgrouplist (x, pbar, pmap, accVce, accStf):    # collect partnames, scorema
     accStf.append (sym == 'brace' and '}' or ']')
 
 def compUnitLength (iv, maten, divs):   # compute optimal unit length
-    uLmin, minLen = 0, sys.maxint
+    uLmin, minLen = 0, max_int
     for uL in [4,8,16]:     # try 1/4, 1/8 and 1/16
         vLen = 0            # total length of abc duration strings in this voice
         for m in maten:     # all measures
@@ -826,7 +835,7 @@ class Parser:
                 if int (e.get ('default-y', '0')) < 0: plc = '_'
                 txt = txt.replace ('"','\\"').replace ('\n', ' ')
                 s.msc.appendElem (vs, '"%s%s"' % (plc, txt)) # to first voice
-            for key, val in dynamics_map.iteritems ():
+            for key, val in dynamics_map.items ():
                 if dirtyp.find ('dynamics/' + key) != None:
                     s.msc.appendElem (vs, val)  # to first voice
             if dirtyp.find ('coda') != None: s.msc.appendElem (vs, 'O')
@@ -967,7 +976,7 @@ class Parser:
 
     def addMidiMap (s, ip, vvmap):      # map abc voices to midi settings
         instr = s.instMid [ip]          # get the midi settings for this part
-        if instr.values (): defInstr = instr.values ()[0]   # default settings = first instrument
+        if instr.values (): defInstr = list(instr.values ())[0]   # default settings = first instrument
         else:               defInstr = s.midDflt    # no instruments defined
         xs = []
         for v, vabc in vvmap.items ():  # xml voice num, abc voice num
@@ -1078,4 +1087,6 @@ if __name__ == '__main__':
         psr = Parser (options)  # xml parser
         try:
             psr.parse (fobj)    # parse file fobj and write abc to <fnm>.abc
-        except Exception, err: info ('** %s occurred: %s' % (type (err), err), 0)
+        except:
+            type, value, traceback = sys.exc_info ()   # works in python 2 & 3
+            info ('** %s occurred: %s' % (type, value), 0)
