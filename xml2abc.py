@@ -2,7 +2,7 @@
 # coding=latin-1
 '''
 Copyright (C) 2012: W.G. Vree
-Contributions: M. Tarenskeen, N. Liberg
+Contributions: M. Tarenskeen, N. Liberg, Paul Villiger
 
 This program is free software; you can redistribute it and/or modify it under the terms of the
 GNU General Public License as published by the Free Software Foundation; either version 2 of
@@ -281,7 +281,8 @@ class ABCoutput:
         s.denL = denL           # denominator of the unit length (L:) from -d option
         s.volpan = volpan       # true -> also output midi volume and panning
         s.cmpL = []             # computed optimal unit length for all voices
-        if pad: s.outfile = file (os.path.join (pad, fnm), 'w') # the ABC output file
+        _, base_name = os.path.split (fnm)
+        if pad: s.outfile = open (os.path.join (pad, base_name), 'w') # the ABC output file
         else:   s.outfile = sys.stdout
 
     def add (s, str):
@@ -329,7 +330,7 @@ class ABCoutput:
         except: s.outfile.write (str.encode ('utf-8'))      # fall back to utf if really needed
         if s.pad: s.outfile.close ()                        # close each file with -o option
         else: s.outfile.write ('\n')                        # add empty line between tunes on stdout
-        info ('%s.abc written with %d voices' % (s.fnm, len (s.clefs)), warn=0)
+        info ('%s written with %d voices' % (s.fnm, len (s.clefs)), warn=0)
 
 #----------------
 # functions
