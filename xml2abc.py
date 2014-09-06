@@ -18,6 +18,8 @@ except: import xml.etree.ElementTree as E
 import os, sys, types, re
 from fractions import Fraction
 
+VERSION = 52
+
 python3 = sys.version_info.major > 2
 if python3:
     tupletype = tuple
@@ -25,8 +27,6 @@ if python3:
 else:
     tupletype = types.TupleType
     max_int = sys.maxint
-
-VERSION = '52'
 
 note_ornamentation_map = {        # for notations/, modified from EasyABC
     'ornaments/trill-mark':       'T',
@@ -1046,7 +1046,7 @@ if __name__ == '__main__':
     from optparse import OptionParser
     from glob import glob
     from zipfile import ZipFile 
-    parser = OptionParser (usage='%prog [-h] [-u] [-m] [-c C] [-d D] [-n BPL] [-o DIR] <file1> [<file2> ...]', version=VERSION)
+    parser = OptionParser (usage='%prog [-h] [-u] [-m] [-c C] [-d D] [-n BPL] [-o DIR] <file1> [<file2> ...]', version=str(VERSION))
     parser.add_option ("-u", action="store_true", help="unfold simple repeats")
     parser.add_option ("-m", action="store_true", help="also output midi channel, volume and panning when needed")
     parser.add_option ("-c", action="store", type="int", help="set credit text filter to C", default=0, metavar='C')
