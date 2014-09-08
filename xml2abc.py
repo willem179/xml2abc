@@ -827,7 +827,7 @@ class Parser:
                 elif type == 'stop':
                     if s.wedge_type == '<': x = '!<)!'
                     else:                   x = '!>)!'
-                else: raise Exception ('wrong wedge type')
+                else: raise ValueError ('wrong wedge type')
                 s.msc.appendElem (vs, x)        # to first voice
             txt = dirtyp.findtext ('words')     # insert text annotations
             if txt:
