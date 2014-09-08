@@ -275,8 +275,8 @@ class Music:
         return vvmap
 
 class ABCoutput:
-    def __init__ (s, fnm, pad, X, denL, volpan):
-        s.fnm = fnm
+    def __init__ (s, fnmext, pad, X, denL, volpan):
+        s.fnmext = fnmext
         s.outlist = []          # list of ABC strings
         s.title = 'T:Title'
         s.key = 'none'
@@ -288,7 +288,7 @@ class ABCoutput:
         s.denL = denL           # denominator of the unit length (L:) from -d option
         s.volpan = volpan       # true -> also output midi volume and panning
         s.cmpL = []             # computed optimal unit length for all voices
-        _, base_name = os.path.split (fnm)
+        _, base_name = os.path.split (fnmext)
         if pad: s.outfile = open (os.path.join (pad, base_name), 'w') # the ABC output file
         else:   s.outfile = sys.stdout
 
@@ -339,7 +339,7 @@ class ABCoutput:
             except: s.outfile.write (str.encode ('utf-8'))      # fall back to utf if really needed
         if s.pad: s.outfile.close ()                        # close each file with -o option
         else: s.outfile.write ('\n')                        # add empty line between tunes on stdout
-        info ('%s written with %d voices' % (s.fnm, len (s.clefs)), warn=0)
+        info ('%s written with %d voices' % (s.fnmext, len (s.clefs)), warn=0)
 
 #----------------
 # functions
