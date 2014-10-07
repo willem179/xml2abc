@@ -288,8 +288,9 @@ class ABCoutput:
         s.denL = denL           # denominator of the unit length (L:) from -d option
         s.volpan = volpan       # true -> also output midi volume and panning
         s.cmpL = []             # computed optimal unit length for all voices
-        _, base_name = os.path.split (fnmext)
-        if pad: s.outfile = open (os.path.join (pad, base_name), 'w') # the ABC output file
+        if pad:
+            _, base_name = os.path.split (fnmext)
+            s.outfile = open (os.path.join (pad, base_name), 'w') # the ABC output file
         else:   s.outfile = sys.stdout
 
     def add (s, str):
