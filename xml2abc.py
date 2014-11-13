@@ -18,7 +18,7 @@ except: import xml.etree.ElementTree as E
 import os, sys, types, re
 from fractions import Fraction
 
-VERSION = 52
+VERSION = 53
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -119,7 +119,7 @@ class Counter:
                 info ( 'part %d, skipped empty voice %d' % (ip, iv))
 
 class Music:
-    def __init__(s, bpl, nvlt):
+    def __init__(s, bpl, cpl, nvlt):
         s.tijd = 0              # the current time
         s.maxtime = 0           # maximum time in a measure
         s.gMaten = []           # [voices,.. for all measures in a part]
@@ -128,7 +128,8 @@ class Music:
         s.cnt = Counter ()      # global counter object
         s.vceCnt = 1            # the global voice count over all parts
         s.lastnote = None       # the last real note record inserted in s.voices
-        s.bpl = bpl             # the number of bars per line when writing abc
+        s.bpl = bpl             # the max number of bars per line when writing abc
+        s.cpl = cpl             # the number of chars per line when writing abc
         s.repbra = 0            # true if volta is used somewhere
         s.nvlt = nvlt           # no volta on higher voice numbers
 
@@ -251,13 +252,15 @@ class Music:
             if s.repbra:
                 if s.nvlt == 1 and s.vceCnt > 1: abcOut.add ('I:repbra 0')  # only volta on first voice
                 if s.nvlt == 2 and iv > lvc:     abcOut.add ('I:repbra 0')  # only volta on first voice of each part
-            if s.bpl > 0: maxll = s.bpl # command line option: max line length in chars
-            else:         maxll = 100   # the default
-            bn = 0                      # count bars
-            while vn:                   # while still measures available
+            if   s.cpl > 0:  s.bpl = 0      # option -n (max chars per line) overrules -b (max bars per line)
+            elif s.bpl == 0: s.cpl = 100    # the default: 100 chars per line
+            bn = 0                  # count bars
+            while vn:               # while still measures available
                 ib = 1
                 chunk = vn [0]
-                while ib < len (vn) and len (chunk) + len (vn [ib]) < maxll:
+                while ib < len (vn):
+                    if s.cpl > 0 and len (chunk) + len (vn [ib]) >= s.cpl: break    # line full (number of chars)
+                    if s.bpl > 0 and ib >= s.bpl: break                             # line full (number of bars)
                     chunk += vn [ib]
                     ib += 1
                 bn += ib
@@ -645,11 +648,11 @@ def getMelisma (maat):                  # get melisma from notes in maat
 class Parser:
     def __init__ (s, options):
         # unfold repeats, number of chars per line, credit filter level, volta option
-        unfold, bpl, ctf, nvlt = options.u, options.n, options.c, options.v
+        unfold, bpl, cpl, ctf, nvlt = options.u, options.b, options.n, options.c, options.v
         s.slurBuf = {}    # dict of open slurs keyed by slur number
         s.wedge_type = '' # remembers the type of the last open wedge (for proper closing)
         s.ingrace = 0     # marks a sequence of grace notes
-        s.msc = Music (bpl, nvlt)  # global music data abstraction
+        s.msc = Music (bpl, cpl, nvlt)  # global music data abstraction
         s.unfold = unfold # turn unfolding repeats on
         s.ctf = ctf       # credit text filter level
         s.gStfMap = []    # [[abc voice numbers] for all parts]
@@ -1047,16 +1050,18 @@ if __name__ == '__main__':
     from optparse import OptionParser
     from glob import glob
     from zipfile import ZipFile 
-    parser = OptionParser (usage='%prog [-h] [-u] [-m] [-c C] [-d D] [-n BPL] [-o DIR] <file1> [<file2> ...]', version=str(VERSION))
+    parser = OptionParser (usage='%prog [-h] [-u] [-m] [-c C] [-d D] [-n CPL] [-b BPL] [-o DIR] <file1> [<file2> ...]', version=str(VERSION))
     parser.add_option ("-u", action="store_true", help="unfold simple repeats")
     parser.add_option ("-m", action="store_true", help="also output midi channel, volume and panning when needed")
     parser.add_option ("-c", action="store", type="int", help="set credit text filter to C", default=0, metavar='C')
     parser.add_option ("-d", action="store", type="int", help="set L:1/D", default=0, metavar='D')
-    parser.add_option ("-n", action="store", type="int", help="BPL: number of bars per line", default=0, metavar='BPL')
+    parser.add_option ("-n", action="store", type="int", help="CPL: max number of characters per line (default 100)", default=0, metavar='CPL')
+    parser.add_option ("-b", action="store", type="int", help="BPL: max number of bars per line", default=0, metavar='BPL')
     parser.add_option ("-o", action="store", help="store abc files in DIR", default='', metavar='DIR')
     parser.add_option ("-v", action="store", type="int", help="set volta typesetting behaviour to V", default=0, metavar='V')
     options, args = parser.parse_args ()
     if options.n < 0: parser.error ('only values >= 0')
+    if options.b < 0: parser.error ('only values >= 0')
     if options.d and options.d not in [2**n for n in range (10)]:
         parser.error ('D should be on of %s' % ','.join ([str(2**n) for n in range (10)]))
     if len (args) == 0: parser.error ('no input file given')
