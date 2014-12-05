@@ -16,9 +16,8 @@ See the GNU General Public License for more details. <http://www.gnu.org/license
 try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re
-from fractions import Fraction
 
-VERSION = 53
+VERSION = 54
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -119,7 +118,7 @@ class Counter:
                 info ( 'part %d, skipped empty voice %d' % (ip, iv))
 
 class Music:
-    def __init__(s, bpl, cpl, nvlt):
+    def __init__(s, options):
         s.tijd = 0              # the current time
         s.maxtime = 0           # maximum time in a measure
         s.gMaten = []           # [voices,.. for all measures in a part]
@@ -128,10 +127,11 @@ class Music:
         s.cnt = Counter ()      # global counter object
         s.vceCnt = 1            # the global voice count over all parts
         s.lastnote = None       # the last real note record inserted in s.voices
-        s.bpl = bpl             # the max number of bars per line when writing abc
-        s.cpl = cpl             # the number of chars per line when writing abc
+        s.bpl = options.b       # the max number of bars per line when writing abc
+        s.cpl = options.n       # the number of chars per line when writing abc
         s.repbra = 0            # true if volta is used somewhere
-        s.nvlt = nvlt           # no volta on higher voice numbers
+        s.nvlt = options.v      # no volta on higher voice numbers
+        s.jscript = options.j   # compatibility with javascript version
 
     def initVoices (s, newPart=0):
         s.vtimes, s.voices, s.lyrics = {}, {}, {}
@@ -227,8 +227,10 @@ class Music:
 
     def outVoices (s, divs, ip):    # output all voices of part ip
         vvmap = {}                  # xml voice number -> abc voice number (one part)
-        lvc = min (s.vnums.keys ()) # lowest xml voice number of this part
-        for iv in s.vnums:
+        vnum_keys = s.vnums.keys ()
+        if s.jscript: vnum_keys.sort ()
+        lvc = min (vnum_keys)       # lowest xml voice number of this part
+        for iv in vnum_keys:
             if s.cnt.getv ('note', iv) == 0:    # no real notes counted in this voice
                 continue            # skip empty voices
             if abcOut.denL: unitL = abcOut.denL # take the unit length from the -d option
@@ -278,7 +280,8 @@ class Music:
         return vvmap
 
 class ABCoutput:
-    def __init__ (s, fnmext, pad, X, denL, volpan):
+    pagekeys = 'scale,pageheight,pagewidth,leftmargin,rightmargin,topmargin,botmargin'.split (',')
+    def __init__ (s, fnmext, pad, X, options):
         s.fnmext = fnmext
         s.outlist = []          # list of ABC strings
         s.title = 'T:Title'
@@ -288,13 +291,21 @@ class ABCoutput:
         s.tempo = 0             # 0 -> no tempo field
         s.pad = pad             # the output path or none
         s.X = X + 1             # the abc tune number
-        s.denL = denL           # denominator of the unit length (L:) from -d option
-        s.volpan = volpan       # true -> also output midi volume and panning
+        s.denL = options.d      # denominator of the unit length (L:) from -d option
+        s.volpan = options.m    # true -> also output midi volume and panning
         s.cmpL = []             # computed optimal unit length for all voices
+        s.jscript = options.j   # compatibility with javascript version
         if pad:
             _, base_name = os.path.split (fnmext)
             s.outfile = open (os.path.join (pad, base_name), 'w') # the ABC output file
         else:   s.outfile = sys.stdout
+        if s.jscript: s.X = 1   # always X:1 in javascript version
+        s.pageFmt = {}
+        for k in s.pagekeys: s.pageFmt [k] = None
+        if len (options.p) == 7:
+            for k, v in zip (s.pagekeys, options.p):
+                try: s.pageFmt [k] = float (v)
+                except: info ('illegal float %s for %s', (k, v)); continue
 
     def add (s, str):
         s.outlist.append (str + '\n')   # collect all ABC output
@@ -313,12 +324,16 @@ class ABCoutput:
             snm = partabbrv.replace ('\n','\\n').replace ('.:','.').strip (':')
             clfnms [firstVoice] = (nm and 'nm="%s"' % nm or '') + (snm and ' snm="%s"' % snm or '')
         hd = ['X:%d\n%s\n' % (s.X, s.title)]
+        for i, k in enumerate (s.pagekeys):
+            if s.jscript and k in ['pageheight','topmargin', 'botmargin']: continue
+            if s.pageFmt [k]: hd.append ('%%%%%s %.2f%s\n' % (k, s.pageFmt [k], i > 0 and 'cm' or ''))
         if staves and len (accStf) > 1: hd.append ('%%score ' + staves + '\n')
         tempo = s.tempo and 'Q:1/4=%s\n' % s.tempo or ''    # default no tempo field
         d = {}  # determine the most frequently occurring unit length over all voices
         for x in s.cmpL: d[x] = d.get (x, 0) + 1
-        defL = sorted (d.items (), key=lambda x:x[1], reverse=1)[0][0]
-        defL = s.denL and s.denL or defL    # override default unit length with -d option
+        if s.jscript:   defLs = sorted (d.items (), lambda a,b: b[1] - a[1] or a[0] - b[0]) # when tie (1) sort on key (0)
+        else:           defLs = sorted (d.items (), lambda a,b: b[1] - a[1])
+        defL = s.denL and s.denL or defLs [0][0] # override default unit length with -d option
         hd.append ('L:1/%d\n%sM:%s\n' % (defL, tempo, s.mtr))
         hd.append ('I:linebreak $\nK:%s\n' % s.key)
         for vnum, clef in s.clefs.items ():
@@ -338,6 +353,8 @@ class ABCoutput:
     def writeall (s):  # determine the required encoding of the entire ABC output
         str = ''.join (s.outlist)
         if python3: s.outfile.write (str)
+        elif s.jscript:
+            s.outfile.write (str.encode ('utf-8'))      # always utf-8 in javascript version
         else:
             try:    s.outfile.write (str.encode ('latin-1'))    # prefer latin-1
             except: s.outfile.write (str.encode ('utf-8'))      # fall back to utf if really needed
@@ -374,8 +391,8 @@ def abcdur (nx, divs, uL):      # convert an musicXML duration d to abc units wi
         numfac, denfac = nx.fact
         num, den = simplify (num * numfac, den * denfac)
     if den > 64:                # limit the denominator to a maximum of 64
-        f = Fraction (num, den).limit_denominator (64)
-        num, den = f.numerator, f.denominator
+        num64 = 64. * num / den
+        num, den = simplify (int (round (num64)), 64)
     if num == 1:
         if   den == 1: dabc = ''
         elif den == 2: dabc = '/'
@@ -648,13 +665,12 @@ def getMelisma (maat):                  # get melisma from notes in maat
 class Parser:
     def __init__ (s, options):
         # unfold repeats, number of chars per line, credit filter level, volta option
-        unfold, bpl, cpl, ctf, nvlt = options.u, options.b, options.n, options.c, options.v
         s.slurBuf = {}    # dict of open slurs keyed by slur number
         s.wedge_type = '' # remembers the type of the last open wedge (for proper closing)
         s.ingrace = 0     # marks a sequence of grace notes
-        s.msc = Music (bpl, cpl, nvlt)  # global music data abstraction
-        s.unfold = unfold # turn unfolding repeats on
-        s.ctf = ctf       # credit text filter level
+        s.msc = Music (options)  # global music data abstraction
+        s.unfold = options.u    # turn unfolding repeats on
+        s.ctf = options.c       # credit text filter level
         s.gStfMap = []    # [[abc voice numbers] for all parts]
         s.midiMap = []    # midi-settings for each abc voice, in order
         s.instMid = []    # [{inst id -> midi-settings} for all parts]
@@ -664,6 +680,11 @@ class Parser:
         s.stfMap = {}     # xml staff number -> [xml voice number]
         s.clefMap = {}    # xml staff number -> clef
         s.curStf = {}     # xml voice number -> current xml staff number
+        s.nolbrk = options.x;   # generate no linebreaks ($)
+        s.jscript = options.j   # compatibility with javascript version
+        s.ornaments = note_ornamentation_map.items ()
+        if s.jscript: s.ornaments.sort ()
+        s.doPageFmt = len (options.p) == 1 # translate xml page format
 
     def matchSlur (s, type2, n, v2, note2, grace, stopgrace): # match slur number n in voice v2, add abc code to before/after
         if type2 not in ['start', 'stop']: return   # slur type continue has no abc equivalent
@@ -684,7 +705,7 @@ class Parser:
             s.slurBuf [n] = (type2, v2, note2, grace)
     
     def doNotations (s, note, nttn):
-        for key, val in note_ornamentation_map.items  ():
+        for key, val in s.ornaments:
             if nttn.find (key) != None: note.before += val  # just concat all ornaments
         fingering = nttn.find ('technical/fingering')
         if fingering != None:   # strings or plug not supported in ABC
@@ -838,6 +859,7 @@ class Parser:
                 plc = plcmnt == 'below' and '_' or '^'
                 if int (e.get ('default-y', '0')) < 0: plc = '_'
                 txt = txt.replace ('"','\\"').replace ('\n', ' ')
+                if s.jscript: txt = txt.strip ()
                 s.msc.appendElem (vs, '"%s%s"' % (plc, txt)) # to first voice
             for key, val in dynamics_map.items ():
                 if dirtyp.find ('dynamics/' + key) != None:
@@ -895,7 +917,7 @@ class Parser:
 
     def doPrint (s, e):     # print element, measure number -> insert a line break
         if e.get ('new-system') == 'yes' or e.get ('new-page') == 'yes':
-            return '$'      # a line break
+            if not s.nolbrk: return '$'  # a line break
 
     def doPartList (s, e):  # translate the start/stop-event-based xml-partlist into proper tree
         for sp in e.findall ('part-list/score-part'):
@@ -944,6 +966,26 @@ class Parser:
         if lyricist: title += '\n'.join (['Z:%s' % c for c in lyricist]) + '\n'
         if title: abcOut.title = title[:-1]
 
+    def doDefaults (s, e):
+        if not s.doPageFmt: return  # return if -pf option absent
+        d = e.find ('defaults');
+        if d == None: return;
+        mils = d.findtext ('scaling/millimeters')   # mills == staff height (mm)
+        tenths = d.findtext ('scaling/tenths')      # staff height in tenths
+        if not mils or not tenths: return
+        xmlScale = float (mils) / float (tenths);   # tenths -> mm
+        space = 10 * xmlScale       # space between staff lines == 10 tenths
+        abcScale = space / 2.117    # 2.117 mm = 6pt = space between staff lines for scale = 1.0 in abcm2ps
+        abcOut.pageFmt ['scale'] = abcScale
+        eks = 2 * ['page-layout/'] + 4 * ['page-layout/page-margins/']
+        eks = [a+b for a,b in zip (eks, 'page-height,page-width,left-margin,right-margin,top-margin,bottom-margin'.split (','))]
+        for i in range (6):
+            v = d.findtext (eks [i])
+            k = abcOut.pagekeys [i+1]   # pagekeys [0] == scale already done, skip it
+            if not abcOut.pageFmt [k] and v:
+                try: abcOut.pageFmt [k] = float (v) * xmlScale / 10.    # -> cm
+                except: info ('illegal value %s for xml element %s', (v, eks [i])); continue    # just skip illegal values
+
     def locStaffMap (s, part):  # map voice to staff with majority voting
         vmap = {}   # {voice -> {staff -> n}} count occurrences of voice in staff
         s.vceInst = {}          # {voice -> instrument id} for this part
@@ -961,7 +1003,9 @@ class Parser:
             x = n.find ('instrument')
             if x != None: s.vceInst [v] = x.get ('id')
         s.stfMap, s.clefMap = {}, {}    # staff -> [voices], staff -> clef
-        for v in vmap.keys ():  # choose staff with most allocations for each voice
+        vks = vmap.keys ()
+        if s.jscript: vks.sort ()
+        for v in vks:           # choose staff with most allocations for each voice
             xs = [(n, sn) for sn, n in vmap[v].items ()]
             xs.sort ()
             stf = xs[-1][1]     # the winner: staff with most notes of voice v
@@ -994,6 +1038,7 @@ class Parser:
     def parse (s, fobj):
         e = E.parse (fobj)
         s.mkTitle (e)
+        s.doDefaults (e)
         partlist = s.doPartList (e)
         parts = e.findall ('part')
         for ip, p in enumerate (parts):
@@ -1050,7 +1095,7 @@ if __name__ == '__main__':
     from optparse import OptionParser
     from glob import glob
     from zipfile import ZipFile 
-    parser = OptionParser (usage='%prog [-h] [-u] [-m] [-c C] [-d D] [-n CPL] [-b BPL] [-o DIR] <file1> [<file2> ...]', version=str(VERSION))
+    parser = OptionParser (usage='%prog [-h] [-u] [-m] [-c C] [-d D] [-n CPL] [-b BPL] [-o DIR] -v [V] [-x] [-p PFMT] <file1> [<file2> ...]', version=str(VERSION))
     parser.add_option ("-u", action="store_true", help="unfold simple repeats")
     parser.add_option ("-m", action="store_true", help="also output midi channel, volume and panning when needed")
     parser.add_option ("-c", action="store", type="int", help="set credit text filter to C", default=0, metavar='C')
@@ -1059,11 +1104,15 @@ if __name__ == '__main__':
     parser.add_option ("-b", action="store", type="int", help="BPL: max number of bars per line", default=0, metavar='BPL')
     parser.add_option ("-o", action="store", help="store abc files in DIR", default='', metavar='DIR')
     parser.add_option ("-v", action="store", type="int", help="set volta typesetting behaviour to V", default=0, metavar='V')
+    parser.add_option ("-x", action="store_true", help="output no line breaks")
+    parser.add_option ("-p", action="store", help="pageformat PFMT (cm) = scale, pageheight, pagewidth, leftmargin, rightmargin, topmargin, botmargin", default='', metavar='PFMT')
+    parser.add_option ("-j", action="store_true", help="switch for compatibility with javascript version")
     options, args = parser.parse_args ()
     if options.n < 0: parser.error ('only values >= 0')
     if options.b < 0: parser.error ('only values >= 0')
     if options.d and options.d not in [2**n for n in range (10)]:
         parser.error ('D should be on of %s' % ','.join ([str(2**n) for n in range (10)]))
+    options.p = options.p and options.p.split (',') or [] # ==> [] | [string]
     if len (args) == 0: parser.error ('no input file given')
     pad = options.o
     if pad:
@@ -1089,7 +1138,7 @@ if __name__ == '__main__':
         else:
             fobj = open (fnmext)            # open regular xml file
 
-        abcOut = ABCoutput (fnm + '.abc', pad, X, options.d, options.m)  # create global ABC output object
+        abcOut = ABCoutput (fnm + '.abc', pad, X, options)  # create global ABC output object
         psr = Parser (options)  # xml parser
         try:
             psr.parse (fobj)    # parse file fobj and write abc to <fnm>.abc
