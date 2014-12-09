@@ -794,6 +794,7 @@ class Parser:
     def doAttr (s, e): # parse a musicXML attribute tag
         teken = {'C1':'alto1','C2':'alto2','C3':'alto','C4':'tenor','F4':'bass','F3':'bass3','G2':'treble','TAB':'','percussion':'perc'}
         trans = {'treble-8': ' m=B,', 'bass-8': ' m=D,,'}
+        if s.jscript: trans = {'treble-8': ' octave=+1', 'bass-8': ' octave=+1'};   # middle= not supported by abc2svg
         dvstxt = e.findtext ('divisions')
         if dvstxt: s.msr.divs = int (dvstxt)
         steps = int (e.findtext ('transpose/chromatic', '0'))   # for transposing instrument
@@ -1095,7 +1096,7 @@ if __name__ == '__main__':
     from optparse import OptionParser
     from glob import glob
     from zipfile import ZipFile 
-    parser = OptionParser (usage='%prog [-h] [-u] [-m] [-c C] [-d D] [-n CPL] [-b BPL] [-o DIR] -v [V] [-x] [-p PFMT] <file1> [<file2> ...]', version=str(VERSION))
+    parser = OptionParser (usage='%prog [-h] [-u] [-m] [-c C] [-d D] [-n CPL] [-b BPL] [-o DIR] [-v V] [-x] [-p PFMT] <file1> [<file2> ...]', version=str(VERSION))
     parser.add_option ("-u", action="store_true", help="unfold simple repeats")
     parser.add_option ("-m", action="store_true", help="also output midi channel, volume and panning when needed")
     parser.add_option ("-c", action="store", type="int", help="set credit text filter to C", default=0, metavar='C')
