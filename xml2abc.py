@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re
 
-VERSION = 54
+VERSION = 55
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -794,7 +794,7 @@ class Parser:
     def doAttr (s, e): # parse a musicXML attribute tag
         teken = {'C1':'alto1','C2':'alto2','C3':'alto','C4':'tenor','F4':'bass','F3':'bass3','G2':'treble','TAB':'','percussion':'perc'}
         trans = {'treble-8': ' m=B,', 'bass-8': ' m=D,,'}
-        if s.jscript: trans = {'treble-8': ' octave=+1', 'bass-8': ' octave=+1'};   # middle= not supported by abc2svg
+        if s.jscript: trans = {'treble-8': ' octave=1', 'bass-8': ' octave=1'}; # middle= not supported by abc2svg
         dvstxt = e.findtext ('divisions')
         if dvstxt: s.msr.divs = int (dvstxt)
         steps = int (e.findtext ('transpose/chromatic', '0'))   # for transposing instrument
@@ -833,6 +833,8 @@ class Parser:
 
     def doDirection (s, e): # parse a musicXML direction tag
         plcmnt = e.get ('placement')
+        stfnum = int (e.findtext ('staff',1))   # directions belong to a staff
+        vs = s.stfMap [stfnum][0]               # directions to first voice of staff
         t = e.find ('sound')        # there are many possible attributes for sound
         if t != None:
             tempo = t.get ('tempo') # look for tempo attribute
@@ -840,11 +842,9 @@ class Parser:
                 if '.' in tempo: tempo = '%.2f' % float (tempo) # hope it is a number and insert in voice 1
                 else:            tempo = '%d' % int (tempo)
                 if s.msc.tijd == 0 and s.msr.ixm == 0: abcOut.tempo = tempo   # first measure -> header
-                else: s.msr.attr += '[Q:1/4=%s]' % tempo    # otherwise -> voice
-        stfnum = int (e.findtext ('staff',1))   # directions belong to a staff
+                else: s.msc.appendElem (vs, '[Q:1/4=%s]' % tempo)   # otherwise -> voice
         dirtyp = e.find ('direction-type')
         if dirtyp != None:
-            vs = s.stfMap [stfnum][0]           # directions to first voice of staff
             t = dirtyp.find ('wedge')
             if t != None:
                 type = t.get ('type')
