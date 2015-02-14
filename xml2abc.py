@@ -337,15 +337,25 @@ class ABCoutput:
         hd.append ('L:1/%d\n%sM:%s\n' % (defL, tempo, s.mtr))
         hd.append ('I:linebreak $\nK:%s\n' % s.key)
         for vnum, clef in s.clefs.items ():
+            ch, prg, vol, pan = midimap [vnum-1][:4]
+            dmap = midimap [vnum - 1][4:]   # map of abc percussion notes to midi notes
+            if dmap: clef = (clef + ' perc=true').strip ();
             hd.append ('V:%d %s %s\n' % (vnum, clef, clfnms.get (vnum, '')))
-            ch, prg, vol, pan = midimap [vnum-1]
             if s.volpan:    # -m option -> output all recognized midi commands when needed and present in xml
                 if ch > 0 and ch != vnum: hd.append ('%%%%MIDI channel %d\n' % ch)
                 if prg > 0:  hd.append ('%%%%MIDI program %d\n' % (prg - 1))
                 if vol >= 0: hd.append ('%%%%MIDI control 7 %.0f\n' % vol)  # volume == 0 is possible ...
                 if pan >= 0: hd.append ('%%%%MIDI control 10 %.0f\n' % pan)
             else:           # default -> only output midi program command when present in xml
+                if dmap: hd.append ('%%MIDI channel 10\n')
                 if prg > 0:  hd.append ('%%%%MIDI program %d\n' % (prg - 1))
+            if dmap:
+                for abcNote, midiNote in dmap:
+                    step = abcNote.replace ('^','').replace ('_','')   # staff step
+                    notehead = 'normal'
+                    if abcNote[0] in '^_': notehead = 'x' if abcNote[0] == '^' else 'circle-x'
+                    hd.append ('%%%%MIDI drummap %s %s\n' % (abcNote, midiNote))
+                    hd.append ('I:percmap %s %s %s %s\n' % (abcNote, step, midiNote, notehead))
             if defL != s.cmpL [vnum-1]: # only if computed unit length different from header
                 hd.append ('L:1/%d\n' % s.cmpL [vnum-1])
         s.outlist = hd + s.outlist
@@ -673,6 +683,8 @@ class Parser:
         s.ctf = options.c       # credit text filter level
         s.gStfMap = []    # [[abc voice numbers] for all parts]
         s.midiMap = []    # midi-settings for each abc voice, in order
+        s.drumInst = {}   # inst_id -> midi pitch for channel 10 notes
+        s.drumNotes = {}  # (xml voice, abc note) -> midi note
         s.instMid = []    # [{inst id -> midi-settings} for all parts]
         s.midDflt = [-1,-1,-1,-91] # default midi settings for channel, program, volume, panning
         s.msralts = {}    # xml-notenames (without octave) with accidentals from the key
@@ -742,8 +754,8 @@ class Parser:
         note = Note ()
         v = int (n.findtext ('voice', '1'))
         chord = n.find ('chord') != None
-        p = n.findtext ('pitch/step')
-        o = n.findtext ('pitch/octave')
+        p = n.findtext ('pitch/step') or n.findtext ('unpitched/display-step')
+        o = n.findtext ('pitch/octave') or n.findtext ('unpitched/display-octave')
         r = n.find ('rest')
         numer = n.findtext ('time-modification/actual-notes')
         if numer:
@@ -772,8 +784,14 @@ class Parser:
             o, p = 5,'E'                    # make it an E5 ??
         nttn = n.find ('notations')     # add ornaments
         if nttn != None: s.doNotations (note, nttn)
+        instr = n.find ('instrument')
         if r != None: noot = 'z'
         else: noot = s.ntAbc (p, int (o), n, v)
+        if instr != None and instr.get ('id') in s.drumInst:    # this is a percussion note
+            nh =  n.findtext ('notehead')
+            if nh == 'x': noot = '^' + noot.replace ('^','').replace ('_','')
+            if nh == 'circle-x' or nh == 'diamond': noot = '_' + noot.replace ('^','').replace ('_','')
+            s.drumNotes [(v, noot)] = s.drumInst [instr.get ('id')] # keep data for percussion map
         if 'start' in [e.get ('type') for e in n.findall ('tie')]:  # n can have stop and start tie
             noot = noot + '-'
         note.beam = sum ([1 for b in n.findall('beam') if b.text in ['continue', 'end']]) + int (note.grace)
@@ -929,6 +947,8 @@ class Parser:
                 if pan >= -90 and pan <= 90:    # would be better to map behind-pannings
                     pan = (float (x[3]) + 90) / 180 * 127   # xml between -90 and +90
                 midi [m.get ('id')] = [int (x[0]), int (x[1]), float (x[2]), pan]
+                up = m.findtext ('midi-unpitched')
+                if up: s.drumInst [m.get ('id')] = up    # store midi-pitch for channel 10 notes
             s.instMid.append (midi)
         ps = e.find ('part-list')               # partlist  = [groupelem]
         xs = getPartlist (ps)                   # groupelem = partname | grouplist
@@ -1029,10 +1049,11 @@ class Parser:
         else:               defInstr = s.midDflt    # no instruments defined
         xs = []
         for v, vabc in vvmap.items ():  # xml voice num, abc voice num
+            ds = [(nt, midi) for (vd, nt), midi in s.drumNotes.items () if v == vd] # map perc notes
             id = s.vceInst.get (v, '')  # get the instrument-id for part with multiple instruments
             if id in instr:             # id is defined as midi-instrument in part-list
-                   xs.append ((vabc, instr [id]))   # get midi settings for id 
-            else:  xs.append ((vabc, defInstr))     # only one instrument for this part
+                   xs.append ((vabc, instr [id] + ds))  # get midi settings for id 
+            else:  xs.append ((vabc, defInstr   + ds))  # only one instrument for this part
         xs.sort ()  # put abc voices in order
         s.midiMap.extend ([midi for v, midi in xs])
 
@@ -1045,6 +1066,7 @@ class Parser:
         for ip, p in enumerate (parts):
             maten = p.findall ('measure')
             s.locStaffMap (p)   # {voice -> staff} for this part
+            s.drumNotes = {}    # (xml voice, abc note) -> midi note
             s.msc.initVoices (newPart = 1)  # create all voices
             aantalHerhaald = 0  # keep track of number of repititions
             herhaalMaat = 0     # target measure of the repitition
