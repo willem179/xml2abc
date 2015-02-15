@@ -784,9 +784,9 @@ class Parser:
             o, p = 5,'E'                    # make it an E5 ??
         nttn = n.find ('notations')     # add ornaments
         if nttn != None: s.doNotations (note, nttn)
-        instr = n.find ('instrument')
         if r != None: noot = 'z'
         else: noot = s.ntAbc (p, int (o), n, v)
+        instr = n.find ('instrument')
         if instr != None and instr.get ('id') in s.drumInst:    # this is a percussion note
             nh =  n.findtext ('notehead')
             if nh == 'x': noot = '^' + noot.replace ('^','').replace ('_','')
@@ -948,7 +948,7 @@ class Parser:
                     pan = (float (x[3]) + 90) / 180 * 127   # xml between -90 and +90
                 midi [m.get ('id')] = [int (x[0]), int (x[1]), float (x[2]), pan]
                 up = m.findtext ('midi-unpitched')
-                if up: s.drumInst [m.get ('id')] = up    # store midi-pitch for channel 10 notes
+                if up: s.drumInst [m.get ('id')] = int (up) - 1 # store midi-pitch for channel 10 notes
             s.instMid.append (midi)
         ps = e.find ('part-list')               # partlist  = [groupelem]
         xs = getPartlist (ps)                   # groupelem = partname | grouplist
