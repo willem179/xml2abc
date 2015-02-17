@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re
 
-VERSION = 55
+VERSION = 56
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -292,7 +292,7 @@ class ABCoutput:
         s.pad = pad             # the output path or none
         s.X = X + 1             # the abc tune number
         s.denL = options.d      # denominator of the unit length (L:) from -d option
-        s.volpan = options.m    # true -> also output midi volume and panning
+        s.volpan = int (options.m)  # 0 -> no %%MIDI, 1 -> only program, 2 -> all %%MIDI
         s.cmpL = []             # computed optimal unit length for all voices
         s.jscript = options.j   # compatibility with javascript version
         if pad:
@@ -339,22 +339,22 @@ class ABCoutput:
         for vnum, clef in s.clefs.items ():
             ch, prg, vol, pan = midimap [vnum-1][:4]
             dmap = midimap [vnum - 1][4:]   # map of abc percussion notes to midi notes
-            if dmap: clef = (clef + ' perc=true').strip ();
+            if dmap and clef != 'perc': clef = (clef + ' perc=true').strip ();
             hd.append ('V:%d %s %s\n' % (vnum, clef, clfnms.get (vnum, '')))
-            if s.volpan:    # -m option -> output all recognized midi commands when needed and present in xml
+            if s.volpan > 1:    # option -m 2 -> output all recognized midi commands when needed and present in xml
                 if ch > 0 and ch != vnum: hd.append ('%%%%MIDI channel %d\n' % ch)
                 if prg > 0:  hd.append ('%%%%MIDI program %d\n' % (prg - 1))
                 if vol >= 0: hd.append ('%%%%MIDI control 7 %.0f\n' % vol)  # volume == 0 is possible ...
                 if pan >= 0: hd.append ('%%%%MIDI control 10 %.0f\n' % pan)
-            else:           # default -> only output midi program command when present in xml
+            elif s.volpan > 0: # default -> only output midi program command when present in xml
                 if dmap: hd.append ('%%MIDI channel 10\n')
                 if prg > 0:  hd.append ('%%%%MIDI program %d\n' % (prg - 1))
-            if dmap:
-                for abcNote, midiNote in dmap:
-                    step = abcNote.replace ('^','').replace ('_','')   # staff step
-                    notehead = 'normal'
-                    if abcNote[0] in '^_': notehead = 'x' if abcNote[0] == '^' else 'circle-x'
-                    hd.append ('%%%%MIDI drummap %s %s\n' % (abcNote, midiNote))
+            for abcNote, midiNote in dmap:
+                step = abcNote.replace ('^','').replace ('_','')   # staff step
+                notehead = 'normal'
+                if abcNote[0] in '^_': notehead = 'x' if abcNote[0] == '^' else 'circle-x'
+                if abcMid (abcNote) != midiNote:
+                    if s.volpan > 0: hd.append ('%%%%MIDI drummap %s %s\n' % (abcNote, midiNote))
                     hd.append ('I:percmap %s %s %s %s\n' % (abcNote, step, midiNote, notehead))
             if defL != s.cmpL [vnum-1]: # only if computed unit length different from header
                 hd.append ('L:1/%d\n' % s.cmpL [vnum-1])
@@ -410,6 +410,16 @@ def abcdur (nx, divs, uL):      # convert an musicXML duration d to abc units wi
     elif den == 1:     dabc = '%d' % num
     else:              dabc = '%d/%d' % (num, den)
     return dabc
+
+def abcMid (note):  # abc note -> midi pitch
+    r = re.search (r"([_^]*)([A-Ga-g])([',]*)", note)
+    if not r: return -1
+    acc, n, oct = r.groups ()
+    nUp = n.upper ()
+    p = 60 + [0,2,4,5,7,9,11]['CDEFGAB'.index (nUp)] + (12 if nUp != n else 0);
+    if acc: p += (1 if acc[0] == '^' else -1) * len (acc)
+    if oct: p += (12 if oct[0] == "'" else -12) * len (oct)
+    return p
 
 def setKey (fifths, mode):
     accs = ['F','C','G','D','A','E','B']
@@ -809,7 +819,7 @@ class Parser:
         for slur in n.findall ('notations/slur'):   # s.msc.lastnote points to the last real note/chord inserted above
             s.matchSlur (slur.get ('type'), slur.get ('number'), v, s.msc.lastnote, note.grace, stopgrace) # match slur definitions
 
-    def doAttr (s, e): # parse a musicXML attribute tag
+    def doAttr (s, e, p): # parse a musicXML attribute tag
         teken = {'C1':'alto1','C2':'alto2','C3':'alto','C4':'tenor','F4':'bass','F3':'bass3','G2':'treble','TAB':'','percussion':'perc'}
         trans = {'treble-8': ' m=B,', 'bass-8': ' m=D,,'}
         if s.jscript: trans = {'treble-8': ' octave=1', 'bass-8': ' octave=1'}; # middle= not supported by abc2svg
@@ -820,8 +830,10 @@ class Parser:
         first = s.msc.tijd == 0 and s.msr.ixm == 0  # first attributes in first measure
         if fifths:
             key, s.msralts = setKey (int (fifths), e.findtext ('key/mode','major'))
-            if first and not steps: abcOut.key = key # first measure -> header, if not transposing instrument!
-            else: s.msr.attr += '[K:%s]' % key  # otherwise -> voice
+            if first and not steps and abcOut.key == 'none':
+                abcOut.key = key                # first measure -> header, if not transposing instrument or percussion part!
+            elif key != abcOut.key or not first:
+                s.msr.attr += '[K:%s]' % key    # otherwise -> voice
         beats = e.findtext ('time/beats')
         if beats:
             unit = e.findtext ('time/beat-type')
@@ -834,7 +846,8 @@ class Parser:
         for clef in e.findall ('clef'):         # a part can have multiple staves
             n = int (clef.get ('number', '1'))  # local staff number for this clef
             sgn = clef.findtext ('sign')
-            cs = teken.get (sgn + clef.findtext ('line', ''), '')
+            line = clef.findtext ('line', '') if sgn != 'percussion' else ''
+            cs = teken.get (sgn + line, '')
             oct = clef.findtext ('clef-octave-change')
             if oct: cs += oct == '-1' and '-8' or '+8'
             if cs in trans: cs += trans[cs]     # patchwork: abcm2ps does not transpose the -8 ...
@@ -1079,7 +1092,7 @@ class Parser:
                 es = maat.getchildren ()
                 for e in es:
                     if   e.tag == 'note':       s.doNote (e)
-                    elif e.tag == 'attributes': s.doAttr (e)
+                    elif e.tag == 'attributes': s.doAttr (e, p)
                     elif e.tag == 'direction':  s.doDirection (e)
                     elif e.tag == 'sound':      s.doDirection (maat) # sound element directly in measure!
                     elif e.tag == 'harmony':    s.doHarmony (e)
@@ -1109,7 +1122,7 @@ class Parser:
         if vvmap:
             abcOut.mkHeader (s.gStfMap, partlist, s.midiMap)
             abcOut.writeall ()
-        else: info ('nothing written, %s has no notes ...' % abcOut.fnm)
+        else: info ('nothing written, %s has no notes ...' % abcOut.fnmext)
 
 #----------------
 # Main Program
@@ -1120,7 +1133,7 @@ if __name__ == '__main__':
     from zipfile import ZipFile 
     parser = OptionParser (usage='%prog [-h] [-u] [-m] [-c C] [-d D] [-n CPL] [-b BPL] [-o DIR] [-v V] [-x] [-p PFMT] <file1> [<file2> ...]', version=str(VERSION))
     parser.add_option ("-u", action="store_true", help="unfold simple repeats")
-    parser.add_option ("-m", action="store_true", help="also output midi channel, volume and panning when needed")
+    parser.add_option ("-m", action="store", help="0 -> no %%MIDI, 1 -> minimal %%MIDI, 2-> all %%MIDI", default=1)
     parser.add_option ("-c", action="store", type="int", help="set credit text filter to C", default=0, metavar='C')
     parser.add_option ("-d", action="store", type="int", help="set L:1/D", default=0, metavar='D')
     parser.add_option ("-n", action="store", type="int", help="CPL: max number of characters per line (default 100)", default=0, metavar='CPL')
