@@ -819,7 +819,7 @@ class Parser:
         for slur in n.findall ('notations/slur'):   # s.msc.lastnote points to the last real note/chord inserted above
             s.matchSlur (slur.get ('type'), slur.get ('number'), v, s.msc.lastnote, note.grace, stopgrace) # match slur definitions
 
-    def doAttr (s, e, p): # parse a musicXML attribute tag
+    def doAttr (s, e):    # parse a musicXML attribute tag
         teken = {'C1':'alto1','C2':'alto2','C3':'alto','C4':'tenor','F4':'bass','F3':'bass3','G2':'treble','TAB':'','percussion':'perc'}
         trans = {'treble-8': ' m=B,', 'bass-8': ' m=D,,'}
         if s.jscript: trans = {'treble-8': ' octave=1', 'bass-8': ' octave=1'}; # middle= not supported by abc2svg
@@ -1092,7 +1092,7 @@ class Parser:
                 es = maat.getchildren ()
                 for e in es:
                     if   e.tag == 'note':       s.doNote (e)
-                    elif e.tag == 'attributes': s.doAttr (e, p)
+                    elif e.tag == 'attributes': s.doAttr (e)
                     elif e.tag == 'direction':  s.doDirection (e)
                     elif e.tag == 'sound':      s.doDirection (maat) # sound element directly in measure!
                     elif e.tag == 'harmony':    s.doHarmony (e)
@@ -1133,7 +1133,7 @@ if __name__ == '__main__':
     from zipfile import ZipFile 
     parser = OptionParser (usage='%prog [-h] [-u] [-m] [-c C] [-d D] [-n CPL] [-b BPL] [-o DIR] [-v V] [-x] [-p PFMT] <file1> [<file2> ...]', version=str(VERSION))
     parser.add_option ("-u", action="store_true", help="unfold simple repeats")
-    parser.add_option ("-m", action="store", help="0 -> no %%MIDI, 1 -> minimal %%MIDI, 2-> all %%MIDI", default=1)
+    parser.add_option ("-m", action="store", help="0 -> no %%MIDI, 1 -> minimal %%MIDI, 2-> all %%MIDI", default=0)
     parser.add_option ("-c", action="store", type="int", help="set credit text filter to C", default=0, metavar='C')
     parser.add_option ("-d", action="store", type="int", help="set L:1/D", default=0, metavar='D')
     parser.add_option ("-n", action="store", type="int", help="CPL: max number of characters per line (default 100)", default=0, metavar='CPL')
