@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re
 
-VERSION = 56
+VERSION = 57
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -339,7 +339,7 @@ class ABCoutput:
         for vnum, clef in s.clefs.items ():
             ch, prg, vol, pan = midimap [vnum-1][:4]
             dmap = midimap [vnum - 1][4:]   # map of abc percussion notes to midi notes
-            if dmap and clef != 'perc': clef = (clef + ' perc=true').strip ();
+            if dmap and clef != 'perc': clef = (clef + ' map=perc').strip ();
             hd.append ('V:%d %s %s\n' % (vnum, clef, clfnms.get (vnum, '')))
             if s.volpan > 1:    # option -m 2 -> output all recognized midi commands when needed and present in xml
                 if ch > 0 and ch != vnum: hd.append ('%%%%MIDI channel %d\n' % ch)
@@ -347,7 +347,7 @@ class ABCoutput:
                 if vol >= 0: hd.append ('%%%%MIDI control 7 %.0f\n' % vol)  # volume == 0 is possible ...
                 if pan >= 0: hd.append ('%%%%MIDI control 10 %.0f\n' % pan)
             elif s.volpan > 0: # default -> only output midi program command when present in xml
-                if dmap: hd.append ('%%MIDI channel 10\n')
+                if dmap: hd.append ('%%%%MIDI channel %d\n' % ch) # also channel if percussion part
                 if prg > 0:  hd.append ('%%%%MIDI program %d\n' % (prg - 1))
             for abcNote, midiNote in dmap:
                 step = abcNote.replace ('^','').replace ('_','')   # staff step
@@ -868,6 +868,14 @@ class Parser:
         vs = s.stfMap [stfnum][0]               # directions to first voice of staff
         t = e.find ('sound')        # there are many possible attributes for sound
         if t != None:
+            minst = t.find ('midi-instrument')
+            if minst:
+                prg = t.findtext ('midi-instrument/midi-program')
+                chn = t.findtext ('midi-instrument/midi-channel')
+                vids = [v for v, id in s.vceInst.items () if id == minst.get ('id')]
+                if vids: vs = vids [0]          # direction for the indentified voice, not the staff
+                parm, inst = ('program', str (int (prg) - 1)) if prg else ('channel', chn)
+                if inst and abcOut.volpan > 0: s.msc.appendElem (vs, '[I:MIDI= %s %s]' % (parm, inst))
             tempo = t.get ('tempo') # look for tempo attribute
             if tempo:
                 if '.' in tempo: tempo = '%.2f' % float (tempo) # hope it is a number and insert in voice 1
@@ -1062,7 +1070,8 @@ class Parser:
         else:               defInstr = s.midDflt    # no instruments defined
         xs = []
         for v, vabc in vvmap.items ():  # xml voice num, abc voice num
-            ds = [(nt, midi) for (vd, nt), midi in s.drumNotes.items () if v == vd] # map perc notes
+            ks = sorted (s.drumNotes.items ())
+            ds = [(nt, midi) for (vd, nt), midi in ks if v == vd] # map perc notes
             id = s.vceInst.get (v, '')  # get the instrument-id for part with multiple instruments
             if id in instr:             # id is defined as midi-instrument in part-list
                    xs.append ((vabc, instr [id] + ds))  # get midi settings for id 
