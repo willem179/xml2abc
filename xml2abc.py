@@ -852,6 +852,8 @@ class Parser:
             if oct: cs += oct == '-1' and '-8' or '+8'
             if cs in trans: cs += trans[cs]     # patchwork: abcm2ps does not transpose the -8 ...
             if steps: cs += ' transpose=' + str (steps)
+            lines = e.findtext ('staff-details/staff-lines')
+            if lines: cs += ' stafflines=%s' % lines
             if first: s.clefMap [n] = cs        # clef goes to header (where it is mapped to voices)
             else:
                 voices = s.stfMap[n]            # clef change to all voices of staff n
