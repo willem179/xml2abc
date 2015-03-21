@@ -225,10 +225,10 @@ class Music:
         s.tijd = s.maxtime = 0
         s.initVoices ()
 
-    def outVoices (s, divs, ip):    # output all voices of part ip
+    def outVoices (s, divs, ip, isSib): # output all voices of part ip
         vvmap = {}                  # xml voice number -> abc voice number (one part)
         vnum_keys = s.vnums.keys ()
-        if s.jscript: vnum_keys.sort ()
+        if s.jscript or isSib: vnum_keys.sort ()
         lvc = min (vnum_keys)       # lowest xml voice number of this part
         for iv in vnum_keys:
             if s.cnt.getv ('note', iv) == 0:    # no real notes counted in this voice
@@ -763,6 +763,7 @@ class Parser:
     def doNote (s, n):    # parse a musicXML note tag
         note = Note ()
         v = int (n.findtext ('voice', '1'))
+        if s.isSib: v += 100 * int (n.findtext ('staff', '1'))  # repair bug in Sibelius
         chord = n.find ('chord') != None
         p = n.findtext ('pitch/step') or n.findtext ('unpitched/display-step')
         o = n.findtext ('pitch/octave') or n.findtext ('unpitched/display-octave')
@@ -805,8 +806,12 @@ class Parser:
         if 'start' in [e.get ('type') for e in n.findall ('tie')]:  # n can have stop and start tie
             noot = noot + '-'
         note.beam = sum ([1 for b in n.findall('beam') if b.text in ['continue', 'end']]) + int (note.grace)
+        lyrlast = 0
         for e in n.findall ('lyric'):
-            lyrnum = int (e.get ('number', '1'))
+            r = re.search (r'(\d+)$', e.get ('number', '1'))    # also do Sibelius numbers
+            lyrnum = int (r.group (1)) if r else 1
+            if lyrnum == 0: lyrnum = lyrlast + 1                # and correct Sibelius bugs
+            else: lyrlast = lyrnum
             note.lyrs [lyrnum] = doSyllable (e)
         if chord: s.msc.addChord (noot)
         else:
@@ -951,7 +956,6 @@ class Parser:
                 n = end.get ('number', '1').replace ('.','').replace (' ','')
                 try: map (int, n.split (','))   # should be a list of integers
                 except: n = '"%s"' % n.strip () # illegal musicXML
-                if end.text: n = '"%s"' % end.text.strip () # text overrides numbers
                 s.msr.lnum = n          # assume a start is always at the beginning of a measure
             elif s.msr.rline == '|':    # stop and discontinue the same  in ABC ?
                 s.msr.rline = '||'      # to stop on a normal barline use || in ABC ?
@@ -1009,6 +1013,8 @@ class Parser:
         if composer: title += '\n'.join (['C:%s' % c for c in composer]) + '\n'
         if lyricist: title += '\n'.join (['Z:%s' % c for c in lyricist]) + '\n'
         if title: abcOut.title = title[:-1]
+        s.isSib = 'Sibelius' in (e.findtext ('identification/encoding/software') or '')
+        if s.isSib: info ('Sibelius MusicXMl is unreliable')
 
     def doDefaults (s, e):
         if not s.doPageFmt: return  # return if -pf option absent
@@ -1037,6 +1043,7 @@ class Parser:
         ns = part.findall ('measure/note')
         for n in ns:            # count staff allocations for all notes
             v = int (n.findtext ('voice', '1'))
+            if s.isSib: v += 100 * int (n.findtext ('staff', '1'))  # repair bug in Sibelius
             s.msc.vnums [v] = 1 # collect all used voice id's in this part
             sn = int (n.findtext ('staff', '1'))
             if v not in vmap:
@@ -1048,7 +1055,7 @@ class Parser:
             if x != None: s.vceInst [v] = x.get ('id')
         s.stfMap, s.clefMap = {}, {}    # staff -> [voices], staff -> clef
         vks = vmap.keys ()
-        if s.jscript: vks.sort ()
+        if s.jscript or s.isSib: vks.sort ()
         for v in vks:           # choose staff with most allocations for each voice
             xs = [(n, sn) for sn, n in vmap[v].items ()]
             xs.sort ()
@@ -1127,7 +1134,7 @@ class Parser:
                         aantalHerhaald = 0  # reset
                         s.msr.ixm += 1      # just continue
                 else: s.msr.ixm += 1        # on to the next measure
-            vvmap = s.msc.outVoices (s.msr.divs, ip)
+            vvmap = s.msc.outVoices (s.msr.divs, ip, s.isSib)
             s.addStaffMap (vvmap)           # update global staff map
             s.addMidiMap (ip, vvmap)
         if vvmap:
@@ -1190,5 +1197,5 @@ if __name__ == '__main__':
         try:
             psr.parse (fobj)    # parse file fobj and write abc to <fnm>.abc
         except:
-            type, value, traceback = sys.exc_info ()   # works in python 2 & 3
-            info ('** %s occurred: %s' % (type, value), 0)
+            etype, value, traceback = sys.exc_info ()   # works in python 2 & 3
+            info ('** %s occurred: %s in %s' % (etype, value, fnmext), 0)
