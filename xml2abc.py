@@ -806,10 +806,9 @@ class Parser:
         if 'start' in [e.get ('type') for e in n.findall ('tie')]:  # n can have stop and start tie
             noot = noot + '-'
         note.beam = sum ([1 for b in n.findall('beam') if b.text in ['continue', 'end']]) + int (note.grace)
-        lyrlast = 0
+        lyrlast = 0; rsib = re.compile (r'^.*verse')
         for e in n.findall ('lyric'):
-            r = re.search (r'(\d+)$', e.get ('number', '1'))    # also do Sibelius numbers
-            lyrnum = int (r.group (1)) if r else 1
+            lyrnum = int (rsib.sub ('', e.get ('number', '1'))) # also do Sibelius numbers
             if lyrnum == 0: lyrnum = lyrlast + 1                # and correct Sibelius bugs
             else: lyrlast = lyrnum
             note.lyrs [lyrnum] = doSyllable (e)
@@ -930,6 +929,7 @@ class Parser:
             triad, mod = kind.split ('-')
             kind = accmap.get (triad, '') + modmap.get (mod, '')
             if kind.startswith ('sus'): kind, sus = '', kind    # sus-suffix goes to the end
+        elif kind == 'none': kind = e.find ('kind').get ('text','')
         degrees = e.findall ('degree')
         for d in degrees:   # chord alterations
             kind += altmap.get (d.findtext ('degree-alter'),'') + d.findtext ('degree-value','')
