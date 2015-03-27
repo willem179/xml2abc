@@ -347,7 +347,7 @@ class ABCoutput:
                 if vol >= 0: hd.append ('%%%%MIDI control 7 %.0f\n' % vol)  # volume == 0 is possible ...
                 if pan >= 0: hd.append ('%%%%MIDI control 10 %.0f\n' % pan)
             elif s.volpan > 0: # default -> only output midi program command when present in xml
-                if dmap: hd.append ('%%%%MIDI channel %d\n' % ch) # also channel if percussion part
+                if dmap and ch > 0: hd.append ('%%%%MIDI channel %d\n' % ch) # also channel if percussion part
                 if prg > 0:  hd.append ('%%%%MIDI program %d\n' % (prg - 1))
             for abcNote, midiNote, notehead in dmap:
                 step = abcNote.replace ('^','').replace ('_','')   # staff step
@@ -805,12 +805,14 @@ class Parser:
         if nttn != None: s.doNotations (note, nttn)
         if r != None: noot = 'z'
         else: noot = s.ntAbc (p, int (o), n, v)
-        instr = n.find ('instrument')
-        if instr != None and instr.get ('id') in s.drumInst:    # this is a percussion note
+        if n.find ('unpitched') != None:
+            instr = n.find ('instrument')
+            instId = instr.get ('id') if instr != None else 'dummyId'
+            midi = s.drumInst.get (instId, abcMid (noot))
             nh =  n.findtext ('notehead', '').replace (' ','-') # replace spaces in xml notehead names for percmap
             if nh == 'x': noot = '^' + noot.replace ('^','').replace ('_','')
             if nh == 'circle-x' or nh == 'diamond': noot = '_' + noot.replace ('^','').replace ('_','')
-            s.drumNotes [(v, noot)] = (s.drumInst [instr.get ('id')], nh)   # keep data for percussion map
+            s.drumNotes [(v, noot)] = (midi, nh) # keep data for percussion map
         if 'start' in [e.get ('type') for e in n.findall ('tie')]:          # n can have stop and start tie
             noot = noot + '-'
         note.beam = sum ([1 for b in n.findall('beam') if b.text in ['continue', 'end']]) + int (note.grace)
