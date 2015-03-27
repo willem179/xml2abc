@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re
 
-VERSION = 57
+VERSION = 58
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -349,10 +349,11 @@ class ABCoutput:
             elif s.volpan > 0: # default -> only output midi program command when present in xml
                 if dmap: hd.append ('%%%%MIDI channel %d\n' % ch) # also channel if percussion part
                 if prg > 0:  hd.append ('%%%%MIDI program %d\n' % (prg - 1))
-            for abcNote, midiNote in dmap:
+            for abcNote, midiNote, notehead in dmap:
                 step = abcNote.replace ('^','').replace ('_','')   # staff step
-                notehead = 'normal'
-                if abcNote[0] in '^_': notehead = 'x' if abcNote[0] == '^' else 'circle-x'
+                interval = 20 if step.replace (',','').replace("'",'').lower () in 'bae' else 21
+                if 'bass' in clef: step = midAbc (abcMid (step) + interval)
+                if not notehead: notehead = 'normal'
                 if abcMid (abcNote) != midiNote:
                     if s.volpan > 0: hd.append ('%%%%MIDI drummap %s %s\n' % (abcNote, midiNote))
                     hd.append ('I:percmap %s %s %s %s\n' % (abcNote, step, midiNote, notehead))
@@ -420,6 +421,13 @@ def abcMid (note):  # abc note -> midi pitch
     if acc: p += (1 if acc[0] == '^' else -1) * len (acc)
     if oct: p += (12 if oct[0] == "'" else -12) * len (oct)
     return p
+
+def midAbc (midi):  # midi pitch -> abc note
+    ns = 'C,^C,D,_E,E,F,^F,G,^G,A,_B,B'.split (',')[midi % 12]
+    midi = midi / 12
+    if midi >= 6: ns = ns.lower() + "'" * (midi - 6)
+    if midi < 5: ns += ',' * (5 - midi)
+    return ns
 
 def setKey (fifths, mode):
     accs = ['F','C','G','D','A','E','B']
@@ -694,7 +702,7 @@ class Parser:
         s.gStfMap = []    # [[abc voice numbers] for all parts]
         s.midiMap = []    # midi-settings for each abc voice, in order
         s.drumInst = {}   # inst_id -> midi pitch for channel 10 notes
-        s.drumNotes = {}  # (xml voice, abc note) -> midi note
+        s.drumNotes = {}  # (xml voice, abc note) -> (midi note, note head)
         s.instMid = []    # [{inst id -> midi-settings} for all parts]
         s.midDflt = [-1,-1,-1,-91] # default midi settings for channel, program, volume, panning
         s.msralts = {}    # xml-notenames (without octave) with accidentals from the key
@@ -799,11 +807,11 @@ class Parser:
         else: noot = s.ntAbc (p, int (o), n, v)
         instr = n.find ('instrument')
         if instr != None and instr.get ('id') in s.drumInst:    # this is a percussion note
-            nh =  n.findtext ('notehead')
+            nh =  n.findtext ('notehead', '').replace (' ','-') # replace spaces in xml notehead names for percmap
             if nh == 'x': noot = '^' + noot.replace ('^','').replace ('_','')
             if nh == 'circle-x' or nh == 'diamond': noot = '_' + noot.replace ('^','').replace ('_','')
-            s.drumNotes [(v, noot)] = s.drumInst [instr.get ('id')] # keep data for percussion map
-        if 'start' in [e.get ('type') for e in n.findall ('tie')]:  # n can have stop and start tie
+            s.drumNotes [(v, noot)] = (s.drumInst [instr.get ('id')], nh)   # keep data for percussion map
+        if 'start' in [e.get ('type') for e in n.findall ('tie')]:          # n can have stop and start tie
             noot = noot + '-'
         note.beam = sum ([1 for b in n.findall('beam') if b.text in ['continue', 'end']]) + int (note.grace)
         lyrlast = 0; rsib = re.compile (r'^.*verse')
@@ -1080,7 +1088,7 @@ class Parser:
         xs = []
         for v, vabc in vvmap.items ():  # xml voice num, abc voice num
             ks = sorted (s.drumNotes.items ())
-            ds = [(nt, midi) for (vd, nt), midi in ks if v == vd] # map perc notes
+            ds = [(nt, midi, head) for (vd, nt), (midi, head) in ks if v == vd] # map perc notes
             id = s.vceInst.get (v, '')  # get the instrument-id for part with multiple instruments
             if id in instr:             # id is defined as midi-instrument in part-list
                    xs.append ((vabc, instr [id] + ds))  # get midi settings for id 
@@ -1097,7 +1105,7 @@ class Parser:
         for ip, p in enumerate (parts):
             maten = p.findall ('measure')
             s.locStaffMap (p)   # {voice -> staff} for this part
-            s.drumNotes = {}    # (xml voice, abc note) -> midi note
+            s.drumNotes = {}    # (xml voice, abc note) -> (midi note, note head)
             s.msc.initVoices (newPart = 1)  # create all voices
             aantalHerhaald = 0  # keep track of number of repititions
             herhaalMaat = 0     # target measure of the repitition
