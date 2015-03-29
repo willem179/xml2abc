@@ -349,10 +349,7 @@ class ABCoutput:
             elif s.volpan > 0: # default -> only output midi program command when present in xml
                 if dmap and ch > 0: hd.append ('%%%%MIDI channel %d\n' % ch) # also channel if percussion part
                 if prg > 0:  hd.append ('%%%%MIDI program %d\n' % (prg - 1))
-            for abcNote, midiNote, notehead in dmap:
-                step = abcNote.replace ('^','').replace ('_','')   # staff step
-                interval = 20 if step.replace (',','').replace("'",'').lower () in 'bae' else 21
-                if 'bass' in clef: step = midAbc (abcMid (step) + interval)
+            for abcNote, step, midiNote, notehead in dmap:
                 if not notehead: notehead = 'normal'
                 if abcMid (abcNote) != midiNote:
                     if s.volpan > 0: hd.append ('%%%%MIDI drummap %s %s\n' % (abcNote, midiNote))
@@ -422,12 +419,15 @@ def abcMid (note):  # abc note -> midi pitch
     if oct: p += (12 if oct[0] == "'" else -12) * len (oct)
     return p
 
-def midAbc (midi):  # midi pitch -> abc note
-    ns = 'C,^C,D,_E,E,F,^F,G,^G,A,_B,B'.split (',')[midi % 12]
-    midi = midi / 12
-    if midi >= 6: ns = ns.lower() + "'" * (midi - 6)
-    if midi < 5: ns += ',' * (5 - midi)
-    return ns
+def staffStep (ptc, o, clef):
+    if clef.startswith ('bass'):    # transpose bass -> treble (C3 -> A4)
+        nm7 = 'C,D,E,F,G,A,B'.split (',')
+        n = nm7.index (ptc) + 12
+        ptc, o = nm7 [n % 7], o + n / 7
+    if o > 4: ptc = ptc.lower ()
+    if o > 5: ptc = ptc + (o-5) * "'"
+    if o < 4: ptc = ptc + (4-o) * ","
+    return ptc
 
 def setKey (fifths, mode):
     accs = ['F','C','G','D','A','E','B']
@@ -708,7 +708,8 @@ class Parser:
         s.msralts = {}    # xml-notenames (without octave) with accidentals from the key
         s.curalts = {}    # abc-notenames (with voice number) with passing accidentals
         s.stfMap = {}     # xml staff number -> [xml voice number]
-        s.clefMap = {}    # xml staff number -> clef
+        s.clefMap = {}    # xml staff number -> abc clef (for header only)
+        s.curClef = {}    # xml staff number -> current abc clef
         s.curStf = {}     # xml voice number -> current xml staff number
         s.nolbrk = options.x;   # generate no linebreaks ($)
         s.jscript = options.j   # compatibility with javascript version
@@ -806,13 +807,15 @@ class Parser:
         if r != None: noot = 'z'
         else: noot = s.ntAbc (p, int (o), n, v)
         if n.find ('unpitched') != None:
+            clef = s.curClef [s.curStf [v]]     # the current clef for this voice
+            step = staffStep (p, int (o), clef) # clef independent step value of note on the staff
             instr = n.find ('instrument')
             instId = instr.get ('id') if instr != None else 'dummyId'
             midi = s.drumInst.get (instId, abcMid (noot))
             nh =  n.findtext ('notehead', '').replace (' ','-') # replace spaces in xml notehead names for percmap
             if nh == 'x': noot = '^' + noot.replace ('^','').replace ('_','')
             if nh == 'circle-x' or nh == 'diamond': noot = '_' + noot.replace ('^','').replace ('_','')
-            s.drumNotes [(v, noot)] = (midi, nh) # keep data for percussion map
+            s.drumNotes [(v, noot)] = (step, midi, nh) # keep data for percussion map
         if 'start' in [e.get ('type') for e in n.findall ('tie')]:          # n can have stop and start tie
             noot = noot + '-'
         note.beam = sum ([1 for b in n.findall('beam') if b.text in ['continue', 'end']]) + int (note.grace)
@@ -868,6 +871,7 @@ class Parser:
             if steps: cs += ' transpose=' + str (steps)
             lines = e.findtext ('staff-details/staff-lines')
             if lines: cs += ' stafflines=%s' % lines
+            s.curClef [n] = cs                  # keep track of current clef (for percmap)
             if first: s.clefMap [n] = cs        # clef goes to header (where it is mapped to voices)
             else:
                 voices = s.stfMap[n]            # clef change to all voices of staff n
@@ -1090,7 +1094,7 @@ class Parser:
         xs = []
         for v, vabc in vvmap.items ():  # xml voice num, abc voice num
             ks = sorted (s.drumNotes.items ())
-            ds = [(nt, midi, head) for (vd, nt), (midi, head) in ks if v == vd] # map perc notes
+            ds = [(nt, step, midi, head) for (vd, nt), (step, midi, head) in ks if v == vd] # map perc notes
             id = s.vceInst.get (v, '')  # get the instrument-id for part with multiple instruments
             if id in instr:             # id is defined as midi-instrument in part-list
                    xs.append ((vabc, instr [id] + ds))  # get midi settings for id 
