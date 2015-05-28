@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re
 
-VERSION = 58
+VERSION = 59
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -710,6 +710,7 @@ class Parser:
         s.stfMap = {}     # xml staff number -> [xml voice number]
         s.clefMap = {}    # xml staff number -> abc clef (for header only)
         s.curClef = {}    # xml staff number -> current abc clef
+        s.clefOct = {}    # xml staff number -> current clef-octave-change
         s.curStf = {}     # xml voice number -> current xml staff number
         s.nolbrk = options.x;   # generate no linebreaks ($)
         s.jscript = options.j   # compatibility with javascript version
@@ -748,6 +749,7 @@ class Parser:
 
     def ntAbc (s, ptc, o, note, v):  # pitch, octave -> abc notation
         acc2alt = {'double-flat':-2,'flat-flat':-2,'flat':-1,'natural':0,'sharp':1,'sharp-sharp':2,'double-sharp':2}
+        o += s.clefOct.get (s.curStf [v], 0)  # minus clef-octave-change value
         p = ptc
         if o > 4: p = ptc.lower ()
         if o > 5: p = p + (o-5) * "'"
@@ -838,8 +840,6 @@ class Parser:
 
     def doAttr (s, e):    # parse a musicXML attribute tag
         teken = {'C1':'alto1','C2':'alto2','C3':'alto','C4':'tenor','F4':'bass','F3':'bass3','G2':'treble','TAB':'','percussion':'perc'}
-        trans = {'treble-8': ' m=B,', 'bass-8': ' m=D,,'}
-        if s.jscript: trans = {'treble-8': ' octave=1', 'bass-8': ' octave=1'}; # middle= not supported by abc2svg
         dvstxt = e.findtext ('divisions')
         if dvstxt: s.msr.divs = int (dvstxt)
         steps = int (e.findtext ('transpose/chromatic', '0'))   # for transposing instrument
@@ -865,9 +865,9 @@ class Parser:
             sgn = clef.findtext ('sign')
             line = clef.findtext ('line', '') if sgn != 'percussion' else ''
             cs = teken.get (sgn + line, '')
-            oct = clef.findtext ('clef-octave-change')
-            if oct: cs += oct == '-1' and '-8' or '+8'
-            if cs in trans: cs += trans[cs]     # patchwork: abcm2ps does not transpose the -8 ...
+            oct = clef.findtext ('clef-octave-change', '') or '0'
+            if oct: cs += {-2:'-15', -1:'-8', 1:'+8', 2:'+15'}.get (int (oct), '')
+            s.clefOct [n] = -int (oct);         # xml playback pitch -> abc notation pitch
             if steps: cs += ' transpose=' + str (steps)
             lines = e.findtext ('staff-details/staff-lines')
             if lines: cs += ' stafflines=%s' % lines
@@ -1112,6 +1112,7 @@ class Parser:
             maten = p.findall ('measure')
             s.locStaffMap (p)   # {voice -> staff} for this part
             s.drumNotes = {}    # (xml voice, abc note) -> (midi note, note head)
+            s.clefOct = {}      # xml staff number -> current clef-octave-change
             s.msc.initVoices (newPart = 1)  # create all voices
             aantalHerhaald = 0  # keep track of number of repititions
             herhaalMaat = 0     # target measure of the repitition
