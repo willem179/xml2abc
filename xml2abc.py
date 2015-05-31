@@ -419,8 +419,8 @@ def abcMid (note):  # abc note -> midi pitch
     if oct: p += (12 if oct[0] == "'" else -12) * len (oct)
     return p
 
-def staffStep (ptc, o, clef):
-    if clef.startswith ('bass'):    # transpose bass -> treble (C3 -> A4)
+def staffStep (ptc, o, clef, tstep):
+    if not tstep and clef.startswith ('bass'):  # transpose bass -> treble (C3 -> A4)
         nm7 = 'C,D,E,F,G,A,B'.split (',')
         n = nm7.index (ptc) + 12
         ptc, o = nm7 [n % 7], o + n / 7
@@ -717,6 +717,7 @@ class Parser:
         s.ornaments = note_ornamentation_map.items ()
         if s.jscript: s.ornaments.sort ()
         s.doPageFmt = len (options.p) == 1 # translate xml page format
+        s.tstep = options.t     # clef determines step on staff (percussion)
 
     def matchSlur (s, type2, n, v2, note2, grace, stopgrace): # match slur number n in voice v2, add abc code to before/after
         if type2 not in ['start', 'stop']: return   # slur type continue has no abc equivalent
@@ -810,13 +811,14 @@ class Parser:
         else: noot = s.ntAbc (p, int (o), n, v)
         if n.find ('unpitched') != None:
             clef = s.curClef [s.curStf [v]]     # the current clef for this voice
-            step = staffStep (p, int (o), clef) # clef independent step value of note on the staff
+            step = staffStep (p, int (o), clef, s.tstep)        # (clef independent) step value of note on the staff
             instr = n.find ('instrument')
             instId = instr.get ('id') if instr != None else 'dummyId'
             midi = s.drumInst.get (instId, abcMid (noot))
             nh =  n.findtext ('notehead', '').replace (' ','-') # replace spaces in xml notehead names for percmap
             if nh == 'x': noot = '^' + noot.replace ('^','').replace ('_','')
             if nh == 'circle-x' or nh == 'diamond': noot = '_' + noot.replace ('^','').replace ('_','')
+            if nh and n.find ('notehead').get ('filled','') == 'yes': nh += '+'
             s.drumNotes [(v, noot)] = (step, midi, nh) # keep data for percussion map
         if 'start' in [e.get ('type') for e in n.findall ('tie')]:          # n can have stop and start tie
             noot = noot + '-'
@@ -1176,6 +1178,7 @@ if __name__ == '__main__':
     parser.add_option ("-x", action="store_true", help="output no line breaks")
     parser.add_option ("-p", action="store", help="pageformat PFMT (cm) = scale, pageheight, pagewidth, leftmargin, rightmargin, topmargin, botmargin", default='', metavar='PFMT')
     parser.add_option ("-j", action="store_true", help="switch for compatibility with javascript version")
+    parser.add_option ("-t", action="store_true", help="staff step value in percmap depends on clef")   # simplifies later translation of I:percmap to %%map
     options, args = parser.parse_args ()
     if options.n < 0: parser.error ('only values >= 0')
     if options.b < 0: parser.error ('only values >= 0')
