@@ -420,9 +420,12 @@ def abcMid (note):  # abc note -> midi pitch
     return p
 
 def staffStep (ptc, o, clef, tstep):
-    if not tstep and clef.startswith ('bass'):  # transpose bass -> treble (C3 -> A4)
+    ndif = 0
+    if 'stafflines=1' in clef: ndif += 4                    # meaning of one line: E (xml) -> B (abc)
+    if not tstep and clef.startswith ('bass'): ndif += 12   # transpose bass -> treble (C3 -> A4)
+    if ndif:    # diatonic transposition == addition modulo 7
         nm7 = 'C,D,E,F,G,A,B'.split (',')
-        n = nm7.index (ptc) + 12
+        n = nm7.index (ptc) + ndif
         ptc, o = nm7 [n % 7], o + n / 7
     if o > 4: ptc = ptc.lower ()
     if o > 5: ptc = ptc + (o-5) * "'"
