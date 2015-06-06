@@ -326,7 +326,7 @@ class ABCoutput:
         hd = ['X:%d\n%s\n' % (s.X, s.title)]
         for i, k in enumerate (s.pagekeys):
             if s.jscript and k in ['pageheight','topmargin', 'botmargin']: continue
-            if s.pageFmt [k]: hd.append ('%%%%%s %.2f%s\n' % (k, s.pageFmt [k], i > 0 and 'cm' or ''))
+            if s.pageFmt [k] != None: hd.append ('%%%%%s %.2f%s\n' % (k, s.pageFmt [k], i > 0 and 'cm' or ''))
         if staves and len (accStf) > 1: hd.append ('%%score ' + staves + '\n')
         tempo = s.tempo and 'Q:1/4=%s\n' % s.tempo or ''    # default no tempo field
         d = {}  # determine the most frequently occurring unit length over all voices
