@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re
 
-VERSION = 59
+VERSION = 60
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -339,7 +339,7 @@ class ABCoutput:
         for vnum, clef in s.clefs.items ():
             ch, prg, vol, pan = midimap [vnum-1][:4]
             dmap = midimap [vnum - 1][4:]   # map of abc percussion notes to midi notes
-            if dmap and clef != 'perc': clef = (clef + ' map=perc').strip ();
+            if dmap and 'perc' not in clef: clef = (clef + ' map=perc').strip ();
             hd.append ('V:%d %s %s\n' % (vnum, clef, clfnms.get (vnum, '')))
             if s.volpan > 1:    # option -m 2 -> output all recognized midi commands when needed and present in xml
                 if ch > 0 and ch != vnum: hd.append ('%%%%MIDI channel %d\n' % ch)
@@ -351,7 +351,7 @@ class ABCoutput:
                 if prg > 0:  hd.append ('%%%%MIDI program %d\n' % (prg - 1))
             for abcNote, step, midiNote, notehead in dmap:
                 if not notehead: notehead = 'normal'
-                if abcMid (abcNote) != midiNote:
+                if abcMid (abcNote) != midiNote or abcNote != step:
                     if s.volpan > 0: hd.append ('%%%%MIDI drummap %s %s\n' % (abcNote, midiNote))
                     hd.append ('I:percmap %s %s %s %s\n' % (abcNote, step, midiNote, notehead))
             if defL != s.cmpL [vnum-1]: # only if computed unit length different from header
