@@ -1013,8 +1013,8 @@ class Parser:
                 cs.append (x)
             if y == 0 and (title + mvttl): cs = ''  # default: only credit when no title set
             return cs
-        title = e.findtext ('work/work-title', '')
-        mvttl = e.findtext ('movement-title', '') 
+        title = e.findtext ('work/work-title', '').strip ()
+        mvttl = e.findtext ('movement-title', '').strip ()
         composer, lyricist, credits = [], [], []
         for creator in e.findall ('identification/creator'):
             if creator.text:
@@ -1026,8 +1026,8 @@ class Parser:
             cs = ''.join (e.text or '' for e in credit.findall('credit-words'))
             credits += [re.sub (r'\s*[\r\n]\s*', ' ', cs)]
         credits = filterCredits (s.ctf)
-        if title: title = 'T:%s\n' % title
-        if mvttl: title += 'T:%s\n' % mvttl
+        if title: title = 'T:%s\n' % title.replace ('\n', '\nT:')
+        if mvttl: title += 'T:%s\n' % mvttl.replace ('\n', '\nT:')
         if credits: title += '\n'.join (['T:%s' % c for c in credits]) + '\n'
         if composer: title += '\n'.join (['C:%s' % c for c in composer]) + '\n'
         if lyricist: title += '\n'.join (['Z:%s' % c for c in lyricist]) + '\n'
