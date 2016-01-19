@@ -2,7 +2,7 @@
 # coding=latin-1
 '''
 Copyright (C) 2012: W.G. Vree
-Contributions: M. Tarenskeen, N. Liberg, Paul Villiger
+Contributions: M. Tarenskeen, N. Liberg, Paul Villiger, Janus Meuris
 
 This program is free software; you can redistribute it and/or modify it under the terms of the
 GNU General Public License as published by the Free Software Foundation; either version 2 of
@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re
 
-VERSION = 60
+VERSION = 61
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -919,13 +919,13 @@ class Parser:
                     else:                   x = '!>)!'
                 else: raise ValueError ('wrong wedge type')
                 s.msc.appendElem (vs, x)        # to first voice
-            txt = dirtyp.findtext ('words')     # insert text annotations
-            if txt:
+            wrds = dirtyp.find ('words')     # insert text annotations
+            if wrds != None:
                 plc = plcmnt == 'below' and '_' or '^'
-                if int (e.get ('default-y', '0')) < 0: plc = '_'
-                txt = txt.replace ('"','\\"').replace ('\n', ' ')
+                if float (wrds.get ('default-y', '0')) < 0: plc = '_'
+                txt = (wrds.text or '').replace ('"','\\"').replace ('\n', ' ')
                 if s.jscript: txt = txt.strip ()
-                s.msc.appendElem (vs, '"%s%s"' % (plc, txt)) # to first voice
+                if txt: s.msc.appendElem (vs, '"%s%s"' % (plc, txt)) # to first voice
             for key, val in dynamics_map.items ():
                 if dirtyp.find ('dynamics/' + key) != None:
                     s.msc.appendElem (vs, val)  # to first voice
@@ -1022,6 +1022,8 @@ class Parser:
                     composer += [line.strip () for line in creator.text.split ('\n')]
                 elif creator.get ('type') in ('lyricist', 'transcriber'):
                     lyricist += [line.strip () for line in creator.text.split ('\n')]
+        for rights in e.findall ('identification/rights'):
+            lyricist += [line.strip () for line in rights.text.split ('\n')]
         for credit in e.findall('credit'):
             cs = ''.join (e.text or '' for e in credit.findall('credit-words'))
             credits += [re.sub (r'\s*[\r\n]\s*', ' ', cs)]
