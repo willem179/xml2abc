@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re
 
-VERSION = 61
+VERSION = 62
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -761,9 +761,10 @@ class Parser:
         acc = note.findtext ('accidental')  # should be the notated accidental
         alt = note.findtext ('pitch/alter') # pitch alteration (midi)
         if alt == None and s.msralts.get (ptc, 0): alt = 0  # no alt but key implies alt -> natural!!
+        if alt == None and (p, v) in s.curalts: alt = 0     # no alt but previous note had one -> natural!!
         if acc == None and alt == None: return p    # no acc, no alt
         elif acc != None:
-            alt = acc2alt [acc]
+            alt = acc2alt [acc]      # acc takes precedence over the pitch here!
         else:   # now see if we really must add an accidental
             alt = int (alt)
             if (p, v) in s.curalts:  # the note in this voice has been altered before
