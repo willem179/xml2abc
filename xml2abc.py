@@ -166,7 +166,7 @@ class Music:
     def appendNote (s, v, note, noot):
         note.ns.append (noot)
         s.appendObj (v, note, int (note.dur))
-        if noot != 'z':             # real notes and grace notes
+        if noot != 'z' and noot != 'x':         # real notes and grace notes
             s.lastnote = note       # remember last note for later modifications (chord, grace)
             s.cnt.inc ('note', v)   # count number of real notes in each voice
             if not note.grace:                  # for every real note
@@ -686,7 +686,7 @@ def getMelisma (maat):                  # get melisma from notes in maat
     for note in maat:                   # every note should get an underscore
         if not isinstance (note, Note): continue    # skip Elem's
         if note.grace: continue         # skip grace notes
-        if note.ns [0] == 'z': break    # stop on first rest
+        if note.ns [0] in 'zx': break   # stop on first rest
         ms.append ('_')
     return ' '.join (ms)
 
@@ -811,7 +811,7 @@ class Parser:
             o, p = 5,'E'                    # make it an E5 ??
         nttn = n.find ('notations')     # add ornaments
         if nttn != None: s.doNotations (note, nttn)
-        if r != None: noot = 'z'
+        if r != None: noot = 'x' if n.get ('print-object') == 'no' else 'z'
         else: noot = s.ntAbc (p, int (o), n, v)
         if n.find ('unpitched') != None:
             clef = s.curClef [s.curStf [v]]     # the current clef for this voice
