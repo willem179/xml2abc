@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re
 
-VERSION = 62
+VERSION = 63
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -160,8 +160,9 @@ class Music:
         s.incTime (dur)
         if s.tijd > s.vtimes[v]: s.vtimes[v] = s.tijd   # don't update for inserted earlier items
 
-    def appendElem (s, v, elem):
+    def appendElem (s, v, elem, tel=0):
         s.appendObj (v, Elem (elem), 0)
+        if tel: s.cnt.inc ('note', v)   # count number of certain elements in each voice (in addition to notes)
 
     def appendNote (s, v, note, noot):
         note.ns.append (noot)
@@ -920,18 +921,19 @@ class Parser:
                     else:                   x = '!>)!'
                 else: raise ValueError ('wrong wedge type')
                 s.msc.appendElem (vs, x)        # to first voice
-            wrds = dirtyp.find ('words')     # insert text annotations
+            wrds = dirtyp.find ('words')        # insert text annotations
+            if wrds == None: wrds = dirtyp.find ('rehearsal')   # treat rehearsal mark as text annotation
             if wrds != None:
                 plc = plcmnt == 'below' and '_' or '^'
                 if float (wrds.get ('default-y', '0')) < 0: plc = '_'
                 txt = (wrds.text or '').replace ('"','\\"').replace ('\n', ' ')
                 if s.jscript: txt = txt.strip ()
-                if txt: s.msc.appendElem (vs, '"%s%s"' % (plc, txt)) # to first voice
+                if txt: s.msc.appendElem (vs, '"%s%s"' % (plc, txt), 1) # to first voice
             for key, val in dynamics_map.items ():
                 if dirtyp.find ('dynamics/' + key) != None:
-                    s.msc.appendElem (vs, val)  # to first voice
-            if dirtyp.find ('coda') != None: s.msc.appendElem (vs, 'O')
-            if dirtyp.find ('segno') != None: s.msc.appendElem (vs, 'S')
+                    s.msc.appendElem (vs, val, 1)  # to first voice
+            if dirtyp.find ('coda') != None: s.msc.appendElem (vs, 'O', 1)
+            if dirtyp.find ('segno') != None: s.msc.appendElem (vs, 'S', 1)
 
     def doHarmony (s, e):   # parse a musicXMl harmony tag
         stfnum = int (e.findtext ('staff',1))   # harmony belongs to a staff
@@ -955,7 +957,7 @@ class Parser:
             kind += altmap.get (d.findtext ('degree-alter'),'') + d.findtext ('degree-value','')
         kind = kind.replace ('79','9').replace ('713','13').replace ('maj6','6')
         bass = e.findtext ('bass/bass-step','') + altmap.get (e.findtext ('bass/bass-alter'),'') 
-        s.msc.appendElem (vt, '"%s%s%s%s%s"' % (root, alt, kind, sus, bass and '/' + bass))
+        s.msc.appendElem (vt, '"%s%s%s%s%s"' % (root, alt, kind, sus, bass and '/' + bass), 1)
 
     def doBarline (s, e):       # 0 = no repeat, 1 = begin repeat, 2 = end repeat
         rep = e.find ('repeat')
