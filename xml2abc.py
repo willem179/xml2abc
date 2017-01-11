@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re
 
-VERSION = 63
+VERSION = 64
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -802,10 +802,11 @@ class Parser:
         if stopgrace:                   # close the grace sequence
             s.ingrace = 0
             s.msc.lastnote.after += '}' # close grace on lastenote.after
+        if dur == None or note.grace: dur = 0
         if r == None and n.get ('print-object') == 'no': # not a rest and not visible
+            if not chord: s.msc.incTime (int (dur))      # still increment the time !!
             s.msc.cnt.inc ('nopr', v)   # count skipped notes
             return                      # skip non printable notes
-        if dur == None or note.grace: dur = 0
         note.dur = int (dur)
         if r == None and (not p or not o):  # not a rest and no pitch
             s.msc.cnt.inc ('nopt', v)       # count unpitched notes
