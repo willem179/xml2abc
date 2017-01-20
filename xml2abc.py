@@ -15,9 +15,9 @@ See the GNU General Public License for more details. <http://www.gnu.org/license
 
 try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
-import os, sys, types, re
+import os, sys, types, re, math
 
-VERSION = 64
+VERSION = 65
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -400,6 +400,8 @@ def abcdur (nx, divs, uL):      # convert an musicXML duration d to abc units wi
         numfac, denfac = nx.fact
         num, den = simplify (num * numfac, den * denfac)
     if den > 64:                # limit the denominator to a maximum of 64
+        x = float (num) / den; n = math.floor (x);  # when just above an integer n
+        if x - n < 0.1 * x: num, den = n, 1;        # round to n
         num64 = 64. * num / den
         num, den = simplify (int (round (num64)), 64)
     if num == 1:
