@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 65
+VERSION = 66
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -123,7 +123,7 @@ class Music:
         s.maxtime = 0           # maximum time in a measure
         s.gMaten = []           # [voices,.. for all measures in a part]
         s.gLyrics = []          # [{num: (abc_lyric_string, melis)},.. for all measures in a part]
-        s.vnums = {}            # all used voice id's in a part
+        s.vnums = {}            # all used voice id's in a part (xml voice id's == numbers)
         s.cnt = Counter ()      # global counter object
         s.vceCnt = 1            # the global voice count over all parts
         s.lastnote = None       # the last real note record inserted in s.voices
@@ -163,6 +163,11 @@ class Music:
     def appendElem (s, v, elem, tel=0):
         s.appendObj (v, Elem (elem), 0)
         if tel: s.cnt.inc ('note', v)   # count number of certain elements in each voice (in addition to notes)
+
+    def appendElemT (s, v, elem, tijd): # insert element at specified time
+        obj = Elem (elem)
+        obj.tijd = tijd
+        s.voices [v].append (obj)
 
     def appendNote (s, v, note, noot):
         note.ns.append (noot)
@@ -332,8 +337,8 @@ class ABCoutput:
         tempo = s.tempo and 'Q:1/4=%s\n' % s.tempo or ''    # default no tempo field
         d = {}  # determine the most frequently occurring unit length over all voices
         for x in s.cmpL: d[x] = d.get (x, 0) + 1
-        if s.jscript:   defLs = sorted (d.items (), lambda a,b: b[1] - a[1] or a[0] - b[0]) # when tie (1) sort on key (0)
-        else:           defLs = sorted (d.items (), lambda a,b: b[1] - a[1])
+        if s.jscript:   defLs = sorted (d.items (), key=lambda x: (-x[1], x[0])) # when tie (1) sort on key (0)
+        else:           defLs = sorted (d.items (), key=lambda x: -x[1])
         defL = s.denL and s.denL or defLs [0][0] # override default unit length with -d option
         hd.append ('L:1/%d\n%sM:%s\n' % (defL, tempo, s.mtr))
         hd.append ('I:linebreak $\nK:%s\n' % s.key)
@@ -531,7 +536,10 @@ def outVoice (measure, divs, im, ip, unitL):    # note/elem objects of one measu
             nospace = 1
         if nospace: vs.append (s)
         else: vs.append (' ' + s)
-    return (''.join (vs))
+    vs = ''.join (vs)   # ad hoc: remove multiple pedal directions
+    while vs.find ('!ped!!ped!') >= 0: vs = vs.replace ('!ped!!ped!','!ped!')
+    while vs.find ('!ped-up!!ped-up!') >= 0: vs = vs.replace ('!ped-up!!ped-up!','!ped-up!')
+    return vs
 
 def sortMeasure (voice, m):
     voice.sort (key=lambda o: o.tijd)   # sort on time
@@ -700,7 +708,7 @@ class Parser:
     def __init__ (s, options):
         # unfold repeats, number of chars per line, credit filter level, volta option
         s.slurBuf = {}    # dict of open slurs keyed by slur number
-        s.wedge_type = '' # remembers the type of the last open wedge (for proper closing)
+        s.dirStk = {}     # {direction-type + number -> (type, voice | time)} dict for proper closing
         s.ingrace = 0     # marks a sequence of grace notes
         s.msc = Music (options)  # global music data abstraction
         s.unfold = options.u    # turn unfolding repeats on
@@ -724,6 +732,9 @@ class Parser:
         if s.jscript: s.ornaments.sort ()
         s.doPageFmt = len (options.p) == 1 # translate xml page format
         s.tstep = options.t     # clef determines step on staff (percussion)
+        s.dirtov1 = options.v1  # all directions to first voice of staff
+        s.ped = options.ped     # render pedal directions
+        s.pedVce = None   # voice for pedal directions
 
     def matchSlur (s, type2, n, v2, note2, grace, stopgrace): # match slur number n in voice v2, add abc code to before/after
         if type2 not in ['start', 'stop']: return   # slur type continue has no abc equivalent
@@ -773,7 +784,8 @@ class Parser:
             if (p, v) in s.curalts:  # the note in this voice has been altered before
                 if alt == s.curalts [(p, v)]: return p      # alteration still the same
             elif alt == s.msralts.get (ptc, 0): return p    # alteration implied by the key
-            if 'stop' in [e.get ('type') for e in note.findall ('tie')]: return p   # don't alter tied notes
+            tieElms = note.findall ('tie') + note.findall ('notations/tied')    # in xml we have separate notated ties and playback ties
+            if 'stop' in [e.get ('type') for e in tieElms]: return p    # don't alter tied notes
             info ('accidental %d added in part %d, measure %d, voice %d note %s' % (alt, s.msr.ixp+1, s.msr.ixm+1, v+1, p))
         s.curalts [(p, v)] = alt
         p = ['__','_','=','^','^^'][alt+2] + p # and finally ... prepend the accidental
@@ -828,7 +840,8 @@ class Parser:
             if nh == 'circle-x' or nh == 'diamond': noot = '_' + noot.replace ('^','').replace ('_','')
             if nh and n.find ('notehead').get ('filled','') == 'yes': nh += '+'
             s.drumNotes [(v, noot)] = (step, midi, nh) # keep data for percussion map
-        if 'start' in [e.get ('type') for e in n.findall ('tie')]:          # n can have stop and start tie
+        tieElms = n.findall ('tie') + n.findall ('notations/tied')  # in xml we have separate notated ties and playback ties
+        if 'start' in [e.get ('type') for e in tieElms]:            # n can have stop and start tie
             noot = noot + '-'
         note.beam = sum ([1 for b in n.findall('beam') if b.text in ['continue', 'end']]) + int (note.grace)
         lyrlast = 0; rsib = re.compile (r'^.*verse')
@@ -892,10 +905,58 @@ class Parser:
                         s.msc.appendElem (v, '[I:staff %+d]' % dstaff)
                     s.msc.appendElem (v, '[K:%s]' % cs)
 
-    def doDirection (s, e): # parse a musicXML direction tag
+    def findVoice (s, i, es):
+        stfnum = int (es[i].findtext ('staff',1))   # directions belong to a staff
+        v1 = s.stfMap [stfnum][0]                   # directions to first voice of staff
+        if s.dirtov1: return stfnum, v1, v1         # option --v1
+        for e in es [i+1:]:                         # or to the voice if the next note
+            if e.tag == 'note':
+                stf = int (e.findtext ('staff', '1'))
+                v = int (e.findtext ('voice', '1'))
+                if s.isSib: v += 100 * int (e.findtext ('staff', '1'))  # repair bug in Sibelius
+                return stf, v, v1                   # voice of next note, first voice of staff
+            if e.tag == 'backup': break
+        return stfnum, v1, v1                       # no note found, fall back to v1
+
+    def doDirection (s, e, i, es): # parse a musicXML direction tag
+        def addDirection (x, vs, tijd, stfnum):
+            if not x: return
+            vs = s.stfMap [stfnum] if '!8v' in x else [vs]  # ottava's go to all voices of staff
+            for v in vs:
+                if tijd != None:   # insert at time of encounter
+                    s.msc.appendElemT (v, x.replace ('(',')').replace ('ped','ped-up'), tijd)
+                else:
+                    s.msc.appendElem (v, x)
+        def startStop (dtype, vs, stfnum=1):
+            typmap = {'down':'!8va(!', 'up':'!8vb(!', 'crescendo':'!<(!', 'diminuendo':'!>(!', 'start':'!ped!'}
+            type = t.get ('type', '')
+            k = dtype + t.get ('number', '1')       # key to match the closing direction
+            if type in typmap:                      # opening the direction
+                x = typmap [type]
+                if k in s.dirStk:                   # closing direction already encountered
+                    stype, tijd = s.dirStk [k]; del s.dirStk [k]
+                    if stype == 'stop':
+                        addDirection (x, vs, tijd, stfnum)
+                    else:
+                        info ('%s direction %s has no stop in part %d, measure %d, voice %d' % (dtype, stype, s.msr.ixp+1, s.msr.ixm+1, vs+1))
+                        s.dirStk [k] = ((type , vs))    # remember voice and type for closing
+                else:
+                    s.dirStk [k] = ((type , vs))    # remember voice and type for closing
+            elif type == 'stop':
+                if k in s.dirStk:                   # matching open direction found
+                    type, vs = s.dirStk [k]; del s.dirStk [k]   # into the same voice
+                    if type == 'stop':
+                        info ('%s direction %s has double stop in part %d, measure %d, voice %d' % (dtype, type, s.msr.ixp+1, s.msr.ixm+1, vs+1))
+                        x = ''
+                    else:
+                        x = typmap [type].replace ('(',')').replace ('ped','ped-up')
+                else:                               # closing direction found before opening
+                    s.dirStk [k] = ('stop', s.msc.tijd)
+                    x = ''                          # delay code generation until opening found
+            else: raise ValueError ('wrong direction type')
+            addDirection (x, vs, None, stfnum)
         plcmnt = e.get ('placement')
-        stfnum = int (e.findtext ('staff',1))   # directions belong to a staff
-        vs = s.stfMap [stfnum][0]               # directions to first voice of staff
+        stf, vs, v1 = s.findVoice (i, es)
         t = e.find ('sound')        # there are many possible attributes for sound
         if t != None:
             minst = t.find ('midi-instrument')
@@ -911,19 +972,11 @@ class Parser:
                 if '.' in tempo: tempo = '%.2f' % float (tempo) # hope it is a number and insert in voice 1
                 else:            tempo = '%d' % int (tempo)
                 if s.msc.tijd == 0 and s.msr.ixm == 0: abcOut.tempo = tempo   # first measure -> header
-                else: s.msc.appendElem (vs, '[Q:1/4=%s]' % tempo)   # otherwise -> voice
+                else: s.msc.appendElem (v1, '[Q:1/4=%s]' % tempo)   # otherwise -> first voice
         dirtyp = e.find ('direction-type')
         if dirtyp != None:
             t = dirtyp.find ('wedge')
-            if t != None:
-                type = t.get ('type')
-                if   type == 'crescendo':  x = '!<(!'; s.wedge_type = '<'
-                elif type == 'diminuendo': x = '!>(!'; s.wedge_type = '>'
-                elif type == 'stop':
-                    if s.wedge_type == '<': x = '!<)!'
-                    else:                   x = '!>)!'
-                else: raise ValueError ('wrong wedge type')
-                s.msc.appendElem (vs, x)        # to first voice
+            if t != None: startStop ('wedge', vs)
             wrds = dirtyp.find ('words')        # insert text annotations
             if wrds == None: wrds = dirtyp.find ('rehearsal')   # treat rehearsal mark as text annotation
             if wrds != None:
@@ -934,13 +987,18 @@ class Parser:
                 if txt: s.msc.appendElem (vs, '"%s%s"' % (plc, txt), 1) # to first voice
             for key, val in dynamics_map.items ():
                 if dirtyp.find ('dynamics/' + key) != None:
-                    s.msc.appendElem (vs, val, 1)  # to first voice
+                    s.msc.appendElem (vs, val, 1)   # to first voice
             if dirtyp.find ('coda') != None: s.msc.appendElem (vs, 'O', 1)
             if dirtyp.find ('segno') != None: s.msc.appendElem (vs, 'S', 1)
+            t = dirtyp.find ('octave-shift')
+            if t != None: startStop ('octave-shift', vs, stf)   # assume size == 8 for the time being
+            t = dirtyp.find ('pedal')
+            if t != None and s.ped:
+                if not s.pedVce: s.pedVce = vs
+                startStop ('pedal', s.pedVce)
 
-    def doHarmony (s, e):   # parse a musicXMl harmony tag
-        stfnum = int (e.findtext ('staff',1))   # harmony belongs to a staff
-        vt = s.stfMap [stfnum][0]               # harmony to first voice of staff
+    def doHarmony (s, e, i, es):    # parse a musicXMl harmony tag
+        _, vt, _ = s.findVoice (i, es)
         short = {'major':'', 'minor':'m', 'augmented':'+', 'diminished':'dim', 'dominant':'7', 'half-diminished':'m7b5'}
         accmap = {'major':'maj', 'dominant':'', 'minor':'m', 'diminished':'dim', 'augmented':'+', 'suspended':'sus'}
         modmap = {'second':'2', 'fourth':'4', 'seventh':'7', 'sixth':'6', 'ninth':'9', '11th':'11', '13th':'13'}
@@ -1063,7 +1121,16 @@ class Parser:
                 try: abcOut.pageFmt [k] = float (v) * xmlScale / 10.    # -> cm
                 except: info ('illegal value %s for xml element %s', (v, eks [i])); continue    # just skip illegal values
 
-    def locStaffMap (s, part):  # map voice to staff with majority voting
+    def locStaffMap (s, part, maten):   # map voice to staff with majority voting
+        def findVoiceOne ():    # locate voice and staff of first ottava direction
+            v = (None, None, None)
+            for m in maten:
+                es = m.getchildren ()
+                for i, e in enumerate (es):
+                    x = e.findall ('direction-type/octave-shift')   # ottava directions
+                    if x and x[0].get ('type') != 'stop':           # only consider up/down directions
+                        return s.findVoice (i, es)
+            return v            # no ottava found (or no note after ottava)
         vmap = {}   # {voice -> {staff -> n}} count occurrences of voice in staff
         s.vceInst = {}          # {voice -> instrument id} for this part
         s.msc.vnums = {}        # voice id's
@@ -1089,11 +1156,13 @@ class Parser:
             stf = xs[-1][1]     # the winner: staff with most notes of voice v
             s.stfMap[stf] = s.stfMap.get (stf, []) + [v]
             s.curStf [v] = stf  # current staff of XML voice v
+        stf, vce, _ = findVoiceOne ()   # vce becomes first voice of staff stf
+        if vce: s.stfMap [stf] = [vce] + [v for v in s.stfMap [stf] if v != vce]
 
     def addStaffMap (s, vvmap): # vvmap: xml voice number -> global abc voice number
         part = [] # default: brace on staffs of one part
         for stf, voices in sorted (s.stfMap.items ()):  # s.stfMap has xml staff and voice numbers
-            locmap = sorted ([vvmap [iv] for iv in voices if iv in vvmap])
+            locmap = [vvmap [iv] for iv in voices if iv in vvmap]
             if locmap:          # abc voice number of staff stf
                 part.append (locmap)
                 clef = s.clefMap.get (stf, 'treble')    # {xml staff number -> clef}
@@ -1123,7 +1192,7 @@ class Parser:
         parts = e.findall ('part')
         for ip, p in enumerate (parts):
             maten = p.findall ('measure')
-            s.locStaffMap (p)   # {voice -> staff} for this part
+            s.locStaffMap (p, maten)        # {voice -> staff} for this part
             s.drumNotes = {}    # (xml voice, abc note) -> (midi note, note head)
             s.clefOct = {}      # xml staff number -> current clef-octave-change
             s.msc.initVoices (newPart = 1)  # create all voices
@@ -1136,12 +1205,12 @@ class Parser:
                 s.msr.reset ()
                 s.curalts = {}  # passing accidentals are reset each measure
                 es = maat.getchildren ()
-                for e in es:
+                for i, e in enumerate (es):
                     if   e.tag == 'note':       s.doNote (e)
                     elif e.tag == 'attributes': s.doAttr (e)
-                    elif e.tag == 'direction':  s.doDirection (e)
-                    elif e.tag == 'sound':      s.doDirection (maat) # sound element directly in measure!
-                    elif e.tag == 'harmony':    s.doHarmony (e)
+                    elif e.tag == 'direction':  s.doDirection (e, i, es)
+                    elif e.tag == 'sound':      s.doDirection (maat, i, es) # sound element directly in measure!
+                    elif e.tag == 'harmony':    s.doHarmony (e, i, es)
                     elif e.tag == 'barline': herhaal = s.doBarline (e)
                     elif e.tag == 'backup':
                         dt = int (e.findtext ('duration'))
@@ -1190,6 +1259,8 @@ if __name__ == '__main__':
     parser.add_option ("-p", action="store", help="pageformat PFMT (cm) = scale, pageheight, pagewidth, leftmargin, rightmargin, topmargin, botmargin", default='', metavar='PFMT')
     parser.add_option ("-j", action="store_true", help="switch for compatibility with javascript version")
     parser.add_option ("-t", action="store_true", help="staff step value in percmap depends on clef")   # simplifies later translation of I:percmap to %%map
+    parser.add_option ("--v1", action="store_true", help="start-stop directions allways to first voice of staff")
+    parser.add_option ("--noped", action="store_false", help="skip all pedal directions", dest='ped', default=True)
     options, args = parser.parse_args ()
     if options.n < 0: parser.error ('only values >= 0')
     if options.b < 0: parser.error ('only values >= 0')
