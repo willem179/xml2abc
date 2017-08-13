@@ -757,9 +757,9 @@ class Parser:
     def doNotations (s, note, nttn):
         for key, val in s.ornaments:
             if nttn.find (key) != None: note.before += val  # just concat all ornaments
-        fingering = nttn.find ('technical/fingering')
-        if fingering != None:   # strings or plug not supported in ABC
-            note.before += '!%s!' % fingering.text     # validate text?
+        fingering = nttn.findall ('technical/fingering')
+        for finger in fingering:            # handle multiple finger annotations
+            note.before += '!%s!' % finger.text     # validate text?
         wvln = nttn.find ('ornaments/wavy-line')
         if wvln != None:
             if   wvln.get ('type') == 'start': note.before = '!trill(!' + note.before # keep left-right order!
