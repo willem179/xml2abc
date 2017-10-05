@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 66
+VERSION = 67
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -1122,15 +1122,6 @@ class Parser:
                 except: info ('illegal value %s for xml element %s', (v, eks [i])); continue    # just skip illegal values
 
     def locStaffMap (s, part, maten):   # map voice to staff with majority voting
-        def findVoiceOne ():    # locate voice and staff of first ottava direction
-            v = (None, None, None)
-            for m in maten:
-                es = m.getchildren ()
-                for i, e in enumerate (es):
-                    x = e.findall ('direction-type/octave-shift')   # ottava directions
-                    if x and x[0].get ('type') != 'stop':           # only consider up/down directions
-                        return s.findVoice (i, es)
-            return v            # no ottava found (or no note after ottava)
         vmap = {}   # {voice -> {staff -> n}} count occurrences of voice in staff
         s.vceInst = {}          # {voice -> instrument id} for this part
         s.msc.vnums = {}        # voice id's
@@ -1156,8 +1147,6 @@ class Parser:
             stf = xs[-1][1]     # the winner: staff with most notes of voice v
             s.stfMap[stf] = s.stfMap.get (stf, []) + [v]
             s.curStf [v] = stf  # current staff of XML voice v
-        stf, vce, _ = findVoiceOne ()   # vce becomes first voice of staff stf
-        if vce: s.stfMap [stf] = [vce] + [v for v in s.stfMap [stf] if v != vce]
 
     def addStaffMap (s, vvmap): # vvmap: xml voice number -> global abc voice number
         part = [] # default: brace on staffs of one part
