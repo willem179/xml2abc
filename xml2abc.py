@@ -539,6 +539,7 @@ def outVoice (measure, divs, im, ip, unitL):    # note/elem objects of one measu
     vs = ''.join (vs)   # ad hoc: remove multiple pedal directions
     while vs.find ('!ped!!ped!') >= 0: vs = vs.replace ('!ped!!ped!','!ped!')
     while vs.find ('!ped-up!!ped-up!') >= 0: vs = vs.replace ('!ped-up!!ped-up!','!ped-up!')
+    while vs.find ('!8va(!!8va)!') >= 0: vs = vs.replace ('!8va(!!8va)!','')    # remove empty ottava's
     return vs
 
 def sortMeasure (voice, m):
