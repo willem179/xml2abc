@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 67
+VERSION = 68
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -1175,6 +1175,7 @@ class Parser:
         s.midiMap.extend ([midi for v, midi in xs])
 
     def parse (s, fobj):
+        vvmapAll = {}   # collect xml->abc voice maps (vvmap) of all parts
         e = E.parse (fobj)
         s.mkTitle (e)
         s.doDefaults (e)
@@ -1224,7 +1225,8 @@ class Parser:
             vvmap = s.msc.outVoices (s.msr.divs, ip, s.isSib)
             s.addStaffMap (vvmap)           # update global staff map
             s.addMidiMap (ip, vvmap)
-        if vvmap:
+            vvmapAll.update (vvmap)
+        if vvmapAll:            # skip output if no part has any notes
             abcOut.mkHeader (s.gStfMap, partlist, s.midiMap)
             abcOut.writeall ()
         else: info ('nothing written, %s has no notes ...' % abcOut.fnmext)
