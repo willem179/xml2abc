@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 68
+VERSION = 69
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -233,7 +233,7 @@ class Music:
 
     def outVoices (s, divs, ip, isSib): # output all voices of part ip
         vvmap = {}                  # xml voice number -> abc voice number (one part)
-        vnum_keys = s.vnums.keys ()
+        vnum_keys = list (s.vnums.keys ())
         if s.jscript or isSib: vnum_keys.sort ()
         lvc = min (vnum_keys)       # lowest xml voice number of this part
         for iv in vnum_keys:
@@ -303,7 +303,7 @@ class ABCoutput:
         s.jscript = options.j   # compatibility with javascript version
         if pad:
             _, base_name = os.path.split (fnmext)
-            s.outfile = open (os.path.join (pad, base_name), 'w') # the ABC output file
+            s.outfile = open (os.path.join (pad, base_name), 'wb') # the ABC output file, binary: we do the encoding ourselves
         else:   s.outfile = sys.stdout
         if s.jscript: s.X = 1   # always X:1 in javascript version
         s.pageFmt = {}
@@ -366,14 +366,13 @@ class ABCoutput:
 
     def writeall (s):  # determine the required encoding of the entire ABC output
         str = ''.join (s.outlist)
-        if python3: s.outfile.write (str)
-        elif s.jscript:
-            s.outfile.write (str.encode ('utf-8'))      # always utf-8 in javascript version
+        if s.jscript:
+            s.outfile.write (str.encode ('utf-8'))  # always utf-8 in javascript version
         else:
             try:    s.outfile.write (str.encode ('latin-1'))    # prefer latin-1
             except: s.outfile.write (str.encode ('utf-8'))      # fall back to utf if really needed
-        if s.pad: s.outfile.close ()                        # close each file with -o option
-        else: s.outfile.write ('\n')                        # add empty line between tunes on stdout
+        if s.pad: s.outfile.close ()                # close each file with -o option
+        else: s.outfile.write ('\n')                # add empty line between tunes on stdout
         info ('%s written with %d voices' % (s.fnmext, len (s.clefs)), warn=0)
 
 #----------------
@@ -396,7 +395,7 @@ def abcLyr (xs, melis): # Convert list xs to abc lyrics.
 def simplify (a, b):    # divide a and b by their greatest common divisor
     x, y = a, b
     while b: a, b = b, a % b
-    return x / a, y / a
+    return x // a, y // a
 
 def abcdur (nx, divs, uL):      # convert an musicXML duration d to abc units with L:1/uL
     if nx.dur == 0: return ''   # when called for elements without duration
@@ -407,7 +406,7 @@ def abcdur (nx, divs, uL):      # convert an musicXML duration d to abc units wi
     if den > 64:                # limit the denominator to a maximum of 64
         x = float (num) / den; n = math.floor (x);  # when just above an integer n
         if x - n < 0.1 * x: num, den = n, 1;        # round to n
-        num64 = 64. * num / den
+        num64 = 64. * num / den + 1.0e-15           # to get Python2 behaviour of round
         num, den = simplify (int (round (num64)), 64)
     if num == 1:
         if   den == 1: dabc = ''
@@ -434,7 +433,7 @@ def staffStep (ptc, o, clef, tstep):
     if ndif:    # diatonic transposition == addition modulo 7
         nm7 = 'C,D,E,F,G,A,B'.split (',')
         n = nm7.index (ptc) + ndif
-        ptc, o = nm7 [n % 7], o + n / 7
+        ptc, o = nm7 [n % 7], o + n // 7
     if o > 4: ptc = ptc.lower ()
     if o > 5: ptc = ptc + (o-5) * "'"
     if o < 4: ptc = ptc + (4-o) * ","
@@ -459,7 +458,7 @@ def insTup (ix, notes, fact):   # read one nested tuplet
     tix = ix                    # index of first tuplet note
     fn, fd = fact               # xml time-mod of the higher level
     fnum, fden = nx.fact        # xml time-mod of the current level
-    tupfact = fnum/fn, fden/fd  # abc time mod of this level
+    tupfact = fnum//fn, fden//fd  # abc time mod of this level
     while ix < len (notes):
         nx = notes [ix]
         if isinstance (nx, Elem) or nx.grace:
@@ -495,12 +494,12 @@ def mkBroken (vs):      # introduce broken rhythms (vs: one voice, one measure)
         # skip if note in tuplet or has no duration or outside beam
         if not n1.fact and not n2.fact and n1.dur > 0 and n2.beam:
             if n1.dur * 3 == n2.dur:
-                n2.dur = (2 * n2.dur) / 3
+                n2.dur = (2 * n2.dur) // 3
                 n1.dur = n1.dur * 2
                 n1.after = '<' + n1.after
                 i += 1              # do not chain broken rhythms
             elif n2.dur * 3 == n1.dur:
-                n1.dur = (2 * n1.dur) / 3
+                n1.dur = (2 * n1.dur) // 3
                 n2.dur = n2.dur * 2
                 n1.after = '>' + n1.after
                 i += 1              # do not chain broken rhythms
@@ -881,7 +880,7 @@ class Parser:
             mtr = beats + '/' + unit
             if first: abcOut.mtr = mtr          # first measure -> header
             else: s.msr.attr += '[M:%s]' % mtr # otherwise -> voice
-            s.msr.mdur = (s.msr.divs * int (beats) * 4) / int (unit)    # duration of measure in xml-divisions
+            s.msr.mdur = (s.msr.divs * int (beats) * 4) // int (unit)    # duration of measure in xml-divisions
         toct = e.findtext ('transpose/octave-change', '')
         if toct: steps += 12 * int (toct)       # extra transposition of toct octaves
         for clef in e.findall ('clef'):         # a part can have multiple staves
@@ -1038,8 +1037,8 @@ class Parser:
         if end != None:
             if end.get ('type') == 'start':
                 n = end.get ('number', '1').replace ('.','').replace (' ','')
-                try: map (int, n.split (','))   # should be a list of integers
-                except: n = '"%s"' % n.strip () # illegal musicXML
+                try: list (map (int, n.split (',')))    # should be a list of integers
+                except: n = '"%s"' % n.strip ()         # illegal musicXML
                 s.msr.lnum = n          # assume a start is always at the beginning of a measure
             elif s.msr.rline == '|':    # stop and discontinue the same  in ABC ?
                 s.msr.rline = '||'      # to stop on a normal barline use || in ABC ?
@@ -1140,7 +1139,7 @@ class Parser:
             x = n.find ('instrument')
             if x != None: s.vceInst [v] = x.get ('id')
         s.stfMap, s.clefMap = {}, {}    # staff -> [voices], staff -> clef
-        vks = vmap.keys ()
+        vks = list (vmap.keys ())
         if s.jscript or s.isSib: vks.sort ()
         for v in vks:           # choose staff with most allocations for each voice
             xs = [(n, sn) for sn, n in vmap[v].items ()]
@@ -1282,7 +1281,7 @@ if __name__ == '__main__':
                     fobj = z.open (n)
                     break   # assume only one MusicXML file per archive
         else:
-            fobj = open (fnmext)            # open regular xml file
+            fobj = open (fnmext, 'rb')      # open regular xml file
 
         abcOut = ABCoutput (fnm + '.abc', pad, X, options)  # create global ABC output object
         psr = Parser (options)  # xml parser
