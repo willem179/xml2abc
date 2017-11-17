@@ -1025,7 +1025,7 @@ class Parser:
         if rep != None: rep = rep.get ('direction')
         if s.unfold:            # unfold repeat, don't translate barlines
             return rep and (rep == 'forward' and 1 or 2) or 0
-        loc = e.get ('location')
+        loc = e.get ('location', 'right')   # right is the default
         if loc == 'right':      # only change style for the right side
             style = e.findtext ('bar-style')
             if   style == 'light-light': s.msr.rline = '||'
