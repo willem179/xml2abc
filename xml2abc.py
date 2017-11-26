@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 69
+VERSION = 70
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -33,16 +33,18 @@ note_ornamentation_map = {        # for notations/, modified from EasyABC
     'ornaments/inverted-mordent': 'P',
     'ornaments/turn':             '!turn!',
     'ornaments/inverted-turn':    '!invertedturn!',
-    'ornaments/tremolo':          '!///!',
     'technical/up-bow':           'u',
     'technical/down-bow':         'v',
     'technical/harmonic':         '!open!',
     'technical/open-string':      '!open!',
     'technical/stopped':          '!plus!',
+    'technical/snap-pizzicato':   '!snap!',
+    'technical/thumb-position':   '!thumb!',
     'articulations/accent':       '!>!',
-    'articulations/strong-accent':'!>!',    # compromise
+    'articulations/strong-accent':'!^!',
     'articulations/staccato':     '.',
     'articulations/staccatissimo':'!wedge!',
+    'articulations/scoop':        '!slide!',
     'fermata':                    '!fermata!',
     'arpeggiate':                 '!arpeggio!',
     'articulations/tenuto':       '!tenuto!',
@@ -56,9 +58,11 @@ dynamics_map = {    # for direction/direction-type/dynamics/
     'p':    '!p!',
     'pp':   '!pp!',
     'ppp':  '!ppp!',
+    'pppp': '!pppp!',
     'f':    '!f!',
     'ff':   '!ff!',
     'fff':  '!fff!',
+    'ffff': '!ffff!',
     'mp':   '!mp!',
     'mf':   '!mf!',
     'sfz':  '!sfz!',
@@ -757,13 +761,25 @@ class Parser:
     def doNotations (s, note, nttn):
         for key, val in s.ornaments:
             if nttn.find (key) != None: note.before += val  # just concat all ornaments
+        trem = nttn.find ('ornaments/tremolo')
+        if trem != None:
+            type = trem.get ('type')
+            duo = '-' if type == 'start' else ''
+            if type != 'single': note.fact = None   # no time modification in ABC
+            if type != 'stop': note.before = '!%s%s!' % (int (trem.text) * '/', duo) + note.before
         fingering = nttn.findall ('technical/fingering')
         for finger in fingering:            # handle multiple finger annotations
             note.before += '!%s!' % finger.text     # validate text?
         wvln = nttn.find ('ornaments/wavy-line')
         if wvln != None:
             if   wvln.get ('type') == 'start': note.before = '!trill(!' + note.before # keep left-right order!
-            elif wvln.get ('type') == 'stop': note.after += '!trill)!'
+            elif wvln.get ('type') == 'stop': note.before = '!trill)!' + note.before
+        glis = nttn.find ('glissando')
+        if glis == None: glis = nttn.find ('slide') # treat slide as glissando
+        if glis != None:
+            lt = '~' if glis.get ('line-type') =='wavy' else '-'
+            if   glis.get ('type') == 'start': note.before = '!%s(!' % lt + note.before # keep left-right order!
+            elif glis.get ('type') == 'stop': note.before = '!%s)!' % lt + note.before
 
     def ntAbc (s, ptc, o, note, v):  # pitch, octave -> abc notation
         acc2alt = {'double-flat':-2,'flat-flat':-2,'flat':-1,'natural':0,'sharp':1,'sharp-sharp':2,'double-sharp':2}
@@ -957,6 +973,8 @@ class Parser:
             addDirection (x, vs, None, stfnum)
         plcmnt = e.get ('placement')
         stf, vs, v1 = s.findVoice (i, es)
+        jmp = ''    # for jump sound elements: dacapo, dalsegno and family
+        jmps = [('dacapo','D.C.'),('dalsegno','D.S.'),('tocoda','dacoda'),('fine','fine'),('coda','O'),('segno','S')]
         t = e.find ('sound')        # there are many possible attributes for sound
         if t != None:
             minst = t.find ('midi-instrument')
@@ -973,6 +991,8 @@ class Parser:
                 else:            tempo = '%d' % int (tempo)
                 if s.msc.tijd == 0 and s.msr.ixm == 0: abcOut.tempo = tempo   # first measure -> header
                 else: s.msc.appendElem (v1, '[Q:1/4=%s]' % tempo)   # otherwise -> first voice
+            for r, v in jmps:
+                if t.get (r, ''): jmp = v; break
         dirtyp = e.find ('direction-type')
         if dirtyp != None:
             t = dirtyp.find ('wedge')
@@ -980,11 +1000,14 @@ class Parser:
             wrds = dirtyp.find ('words')        # insert text annotations
             if wrds == None: wrds = dirtyp.find ('rehearsal')   # treat rehearsal mark as text annotation
             if wrds != None:
-                plc = plcmnt == 'below' and '_' or '^'
-                if float (wrds.get ('default-y', '0')) < 0: plc = '_'
-                txt = (wrds.text or '').replace ('"','\\"').replace ('\n', ' ')
-                if s.jscript: txt = txt.strip ()
-                if txt: s.msc.appendElem (vs, '"%s%s"' % (plc, txt), 1) # to first voice
+                if jmp: # ignore the words when a jump sound element is present in this direction
+                    s.msc.appendElem (vs, '!%s!' % jmp , 1) # to first voice
+                else:
+                    plc = plcmnt == 'below' and '_' or '^'
+                    if float (wrds.get ('default-y', '0')) < 0: plc = '_'
+                    txt = (wrds.text or '').replace ('"','\\"').replace ('\n', ' ')
+                    if s.jscript: txt = txt.strip ()
+                    if txt: s.msc.appendElem (vs, '"%s%s"' % (plc, txt), 1) # to first voice
             for key, val in dynamics_map.items ():
                 if dirtyp.find ('dynamics/' + key) != None:
                     s.msc.appendElem (vs, val, 1)   # to first voice
