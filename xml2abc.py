@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 70
+VERSION = 71
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -96,7 +96,7 @@ class Note:
         s.tupabc = ''   # abc tuplet string to issue before note
         s.beam = 0      # 1 = beamed
         s.grace = 0     # 1 = grace note
-        s.before = ''   # extra abc string that goes before the note/chord
+        s.before = []   # abc string that goes before the note/chord
         s.after = ''    # the same after the note/chord
         s.ns = n and [n] or []  # notes in the chord
         s.lyrs = {}     # {number -> syllabe}
@@ -192,9 +192,13 @@ class Music:
             if num in lyrdict: return lyrdict[num][1]   # lyrdict = num -> (lyric string, melisma)
         return 0 # no previous lyrics in voice or line number
 
-    def addChord (s, noot):  # careful: we assume that chord notes follow immediately 
+    def addChord (s, note, noot):   # careful: we assume that chord notes follow immediately
+        if '!courtesy!' in s.lastnote.before:       # put courtesy into the note, right before the accidental
+            s.lastnote.before.remove ('!courtesy!') # the other before-decorations are prepended in outVoice
+            s.lastnote.ns [0] = '!courtesy!' + s.lastnote.ns [0]
+        for d in note.before:
+            if d not in s.lastnote.before: noot = d + noot # put decorations inside chord
         s.lastnote.ns.append (noot)
-
     def addBar (s, lbrk, m): # linebreak, measure data
         if m.mdur and s.maxtime > m.mdur: info ('measure %d in part %d longer than metre' % (m.ixm+1, m.ixp+1))
         s.tijd = s.maxtime              # the time of the bar lines inserted here
@@ -526,7 +530,7 @@ def outVoice (measure, divs, im, ip, unitL):    # note/elem objects of one measu
             if chord and len (cns) == len (nx.ns):      # all chord notes tied
                 nx.ns = cns     # chord notes without tie
                 tie = '-'       # one tie for whole chord
-            s = nx.tupabc + nx.before
+            s = nx.tupabc + ''.join (nx.before)
             if chord: s += '['
             for nt in nx.ns: s += nt
             if chord: s += ']' + tie
@@ -748,7 +752,7 @@ class Parser:
             if type2 != type1:              # slur complete, now check the voice
                 if v2 == v1:                # begins and ends in the same voice: keep it
                     if type1 == 'start' and (not grace1 or not stopgrace):  # normal slur: start before stop and no grace slur
-                        note1.before = '(' + note1.before   # keep left-right order!
+                        note1.before = ['('] + note1.before # keep left-right order!
                         note2.after += ')'
                     # no else: don't bother with reversed stave spanning slurs
                 del s.slurBuf [n]           # slur finished, remove from stack
@@ -760,26 +764,26 @@ class Parser:
     
     def doNotations (s, note, nttn):
         for key, val in s.ornaments:
-            if nttn.find (key) != None: note.before += val  # just concat all ornaments
+            if nttn.find (key) != None: note.before += [val]  # just concat all ornaments
         trem = nttn.find ('ornaments/tremolo')
         if trem != None:
             type = trem.get ('type')
             duo = '-' if type == 'start' else ''
             if type != 'single': note.fact = None   # no time modification in ABC
-            if type != 'stop': note.before = '!%s%s!' % (int (trem.text) * '/', duo) + note.before
+            if type != 'stop': note.before = ['!%s%s!' % (int (trem.text) * '/', duo)] + note.before
         fingering = nttn.findall ('technical/fingering')
         for finger in fingering:            # handle multiple finger annotations
-            note.before += '!%s!' % finger.text     # validate text?
+            note.before += ['!%s!' % finger.text]   # validate text?
         wvln = nttn.find ('ornaments/wavy-line')
         if wvln != None:
-            if   wvln.get ('type') == 'start': note.before = '!trill(!' + note.before # keep left-right order!
-            elif wvln.get ('type') == 'stop': note.before = '!trill)!' + note.before
+            if   wvln.get ('type') == 'start': note.before = ['!trill(!'] + note.before # keep left-right order!
+            elif wvln.get ('type') == 'stop': note.before = ['!trill)!'] + note.before
         glis = nttn.find ('glissando')
         if glis == None: glis = nttn.find ('slide') # treat slide as glissando
         if glis != None:
             lt = '~' if glis.get ('line-type') =='wavy' else '-'
-            if   glis.get ('type') == 'start': note.before = '!%s(!' % lt + note.before # keep left-right order!
-            elif glis.get ('type') == 'stop': note.before = '!%s)!' % lt + note.before
+            if   glis.get ('type') == 'start': note.before = ['!%s(!' % lt] + note.before # keep left-right order!
+            elif glis.get ('type') == 'stop': note.before = ['!%s)!' % lt] + note.before
 
     def ntAbc (s, ptc, o, note, v):  # pitch, octave -> abc notation
         acc2alt = {'double-flat':-2,'flat-flat':-2,'flat':-1,'natural':0,'sharp':1,'sharp-sharp':2,'double-sharp':2}
@@ -823,11 +827,11 @@ class Parser:
         dur = n.findtext ('duration')
         grc = n.find ('grace')
         note.grace = grc != None
-        note.before, note.after = '', '' # strings with ABC stuff that goes before or after a note/chord
+        note.before, note.after = [], '' # strings with ABC stuff that goes before or after a note/chord
         if note.grace and not s.ingrace: # open a grace sequence
             s.ingrace = 1
-            note.before = '{'
-            if grc.get ('slash') == 'yes': note.before += '/'   # acciaccatura
+            note.before = ['{']
+            if grc.get ('slash') == 'yes': note.before += ['/'] # acciaccatura
         stopgrace = not note.grace and s.ingrace
         if stopgrace:                   # close the grace sequence
             s.ingrace = 0
@@ -843,6 +847,10 @@ class Parser:
             o, p = 5,'E'                    # make it an E5 ??
         nttn = n.find ('notations')     # add ornaments
         if nttn != None: s.doNotations (note, nttn)
+        e = n.find ('stem')
+        if e != None and e.text == 'none': note.before += ['!stemless!']
+        e = n.find ('accidental')
+        if e != None and e.get ('parentheses') == 'yes': note.before += ['!courtesy!']
         if r != None: noot = 'x' if n.get ('print-object') == 'no' else 'z'
         else: noot = s.ntAbc (p, int (o), n, v)
         if n.find ('unpitched') != None:
@@ -866,7 +874,7 @@ class Parser:
             if lyrnum == 0: lyrnum = lyrlast + 1                # and correct Sibelius bugs
             else: lyrlast = lyrnum
             note.lyrs [lyrnum] = doSyllable (e)
-        if chord: s.msc.addChord (noot)
+        if chord: s.msc.addChord (note, noot)
         else:
             xmlstaff = int (n.findtext ('staff', '1'))
             if s.curStf [v] != xmlstaff:    # the note should go to another staff
