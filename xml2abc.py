@@ -774,6 +774,9 @@ class Parser:
         fingering = nttn.findall ('technical/fingering')
         for finger in fingering:            # handle multiple finger annotations
             note.before += ['!%s!' % finger.text]   # validate text?
+        strings = nttn.findall ('technical/string')
+        for snaar in strings:               # tabulature
+            note.before += ['!%s!' % snaar.text]
         wvln = nttn.find ('ornaments/wavy-line')
         if wvln != None:
             if   wvln.get ('type') == 'start': note.before = ['!trill(!'] + note.before # keep left-right order!
@@ -886,7 +889,7 @@ class Parser:
             s.matchSlur (slur.get ('type'), slur.get ('number'), v, s.msc.lastnote, note.grace, stopgrace) # match slur definitions
 
     def doAttr (s, e):    # parse a musicXML attribute tag
-        teken = {'C1':'alto1','C2':'alto2','C3':'alto','C4':'tenor','F4':'bass','F3':'bass3','G2':'treble','TAB':'','percussion':'perc'}
+        teken = {'C1':'alto1','C2':'alto2','C3':'alto','C4':'tenor','F4':'bass','F3':'bass3','G2':'treble','TAB':'tab','percussion':'perc'}
         dvstxt = e.findtext ('divisions')
         if dvstxt: s.msr.divs = int (dvstxt)
         steps = int (e.findtext ('transpose/chromatic', '0'))   # for transposing instrument
@@ -910,7 +913,7 @@ class Parser:
         for clef in e.findall ('clef'):         # a part can have multiple staves
             n = int (clef.get ('number', '1'))  # local staff number for this clef
             sgn = clef.findtext ('sign')
-            line = clef.findtext ('line', '') if sgn != 'percussion' else ''
+            line = clef.findtext ('line', '') if sgn not in ['percussion','TAB'] else ''
             cs = teken.get (sgn + line, '')
             oct = clef.findtext ('clef-octave-change', '') or '0'
             if oct: cs += {-2:'-15', -1:'-8', 1:'+8', 2:'+15'}.get (int (oct), '')
@@ -918,6 +921,12 @@ class Parser:
             if steps: cs += ' transpose=' + str (steps)
             lines = e.findtext ('staff-details/staff-lines')
             if lines: cs += ' stafflines=%s' % lines
+            strings = e.findall ('staff-details/staff-tuning')
+            if strings:
+                tuning = [st.findtext ('tuning-step') + st.findtext ('tuning-octave') for st in strings]
+                cs += ' strings=%s' % ','.join (tuning) 
+            capo = e.findtext ('staff-details/capo')
+            if capo: cs += ' capo=%s' % capo
             s.curClef [n] = cs                  # keep track of current clef (for percmap)
             if first: s.clefMap [n] = cs        # clef goes to header (where it is mapped to voices)
             else:
