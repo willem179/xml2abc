@@ -762,7 +762,8 @@ class Parser:
         else:                               # unmatched slur, put in dict
             s.slurBuf [n] = (type2, v2, note2, grace)
     
-    def doNotations (s, note, nttn):
+    def doNotations (s, note, nttn, v):
+        isTab = s.curClef and s.curClef.get (s.curStf [v], '').startswith ('tab')
         for key, val in s.ornaments:
             if nttn.find (key) != None: note.before += [val]  # just concat all ornaments
         trem = nttn.find ('ornaments/tremolo')
@@ -772,11 +773,12 @@ class Parser:
             if type != 'single': note.fact = None   # no time modification in ABC
             if type != 'stop': note.before = ['!%s%s!' % (int (trem.text) * '/', duo)] + note.before
         fingering = nttn.findall ('technical/fingering')
-        for finger in fingering:            # handle multiple finger annotations
-            note.before += ['!%s!' % finger.text]   # validate text?
+        for finger in fingering:    # handle multiple finger annotations
+            if not isTab: note.before += ['!%s!' % finger.text]   # validate text?
         strings = nttn.findall ('technical/string')
-        for snaar in strings:               # tabulature
-            note.before += ['!%s!' % snaar.text]
+        for snaar in strings:       # tabulature
+            deco = '!%s!' % snaar.text  # no double string decos (bug in musescore)
+            if isTab and deco not in note.before: note.before += [deco]
         wvln = nttn.find ('ornaments/wavy-line')
         if wvln != None:
             if   wvln.get ('type') == 'start': note.before = ['!trill(!'] + note.before # keep left-right order!
@@ -849,7 +851,7 @@ class Parser:
             s.msc.cnt.inc ('nopt', v)       # count unpitched notes
             o, p = 5,'E'                    # make it an E5 ??
         nttn = n.find ('notations')     # add ornaments
-        if nttn != None: s.doNotations (note, nttn)
+        if nttn != None: s.doNotations (note, nttn, v)
         e = n.find ('stem')
         if e != None and e.text == 'none': note.before += ['!stemless!']
         e = n.find ('accidental')
@@ -919,14 +921,16 @@ class Parser:
             if oct: cs += {-2:'-15', -1:'-8', 1:'+8', 2:'+15'}.get (int (oct), '')
             s.clefOct [n] = -int (oct);         # xml playback pitch -> abc notation pitch
             if steps: cs += ' transpose=' + str (steps)
-            lines = e.findtext ('staff-details/staff-lines')
-            if lines: cs += ' stafflines=%s' % lines
-            strings = e.findall ('staff-details/staff-tuning')
-            if strings:
-                tuning = [st.findtext ('tuning-step') + st.findtext ('tuning-octave') for st in strings]
-                cs += ' strings=%s' % ','.join (tuning) 
-            capo = e.findtext ('staff-details/capo')
-            if capo: cs += ' capo=%s' % capo
+            stfdtl = e.find ('staff-details')
+            if stfdtl and int (stfdtl.get ('number', '1')) == n:
+                lines = stfdtl.findtext ('staff-lines')
+                if lines: cs += ' stafflines=%s' % lines
+                strings = stfdtl.findall ('staff-tuning')
+                if strings:
+                    tuning = [st.findtext ('tuning-step') + st.findtext ('tuning-octave') for st in strings]
+                    cs += ' strings=%s' % ','.join (tuning) 
+                capo = stfdtl.findtext ('capo')
+                if capo: cs += ' capo=%s' % capo
             s.curClef [n] = cs                  # keep track of current clef (for percmap)
             if first: s.clefMap [n] = cs        # clef goes to header (where it is mapped to voices)
             else:
