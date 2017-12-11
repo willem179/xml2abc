@@ -853,7 +853,7 @@ class Parser:
         nttn = n.find ('notations')     # add ornaments
         if nttn != None: s.doNotations (note, nttn, isTab)
         e = n.find ('stem')
-        if e != None and e.text == 'none' and (not isTab or len (s.stfMap) == 1):
+        if e != None and e.text == 'none' and (not isTab or v in s.hasStems):
             note.before += ['!stemless!'];
         e = n.find ('accidental')
         if e != None and e.get ('parentheses') == 'yes': note.before += ['!courtesy!']
@@ -930,7 +930,6 @@ class Parser:
                 if strings:
                     tuning = [st.findtext ('tuning-step') + st.findtext ('tuning-octave') for st in strings]
                     cs += ' strings=%s' % ','.join (tuning) 
-                    if (len (s.stfMap) > 1): cs += ' nostems'
                 capo = stfdtl.findtext ('capo')
                 if capo: cs += ' capo=%s' % capo
             s.curClef [n] = cs                  # keep track of current clef (for percmap)
@@ -1171,6 +1170,7 @@ class Parser:
         vmap = {}   # {voice -> {staff -> n}} count occurrences of voice in staff
         s.vceInst = {}          # {voice -> instrument id} for this part
         s.msc.vnums = {}        # voice id's
+        s.hasStems = {}         # XML voice nums with at least one note with a stem (for tab key)
         ns = part.findall ('measure/note')
         for n in ns:            # count staff allocations for all notes
             v = int (n.findtext ('voice', '1'))
@@ -1184,6 +1184,8 @@ class Parser:
                 d[sn] = d.get (sn, 0) + 1   # ++ number of allocations for staff sn
             x = n.find ('instrument')
             if x != None: s.vceInst [v] = x.get ('id')
+            x = n.findtext ('stem')
+            if x and x != 'none': s.hasStems [v] = 1    # XML voice v has at least one stem
         s.stfMap, s.clefMap = {}, {}    # staff -> [voices], staff -> clef
         vks = list (vmap.keys ())
         if s.jscript or s.isSib: vks.sort ()
@@ -1198,10 +1200,14 @@ class Parser:
         part = [] # default: brace on staffs of one part
         for stf, voices in sorted (s.stfMap.items ()):  # s.stfMap has xml staff and voice numbers
             locmap = [vvmap [iv] for iv in voices if iv in vvmap]
+            nostem = [(iv not in s.hasStems) for iv in voices if iv in vvmap]   # same order as locmap
             if locmap:          # abc voice number of staff stf
                 part.append (locmap)
                 clef = s.clefMap.get (stf, 'treble')    # {xml staff number -> clef}
-                for iv in locmap: abcOut.clefs [iv] = clef
+                for i, iv in enumerate (locmap):
+                    nostem_attr = ''
+                    if clef.startswith ('tab') and nostem [i] and 'nostems' not in clef: nostem_attr = ' nostems'
+                    abcOut.clefs [iv] = clef + nostem_attr # add nostems when all notes of voice had no stem
         s.gStfMap.append (part)
 
     def addMidiMap (s, ip, vvmap):      # map abc voices to midi settings
