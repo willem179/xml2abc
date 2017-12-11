@@ -762,8 +762,7 @@ class Parser:
         else:                               # unmatched slur, put in dict
             s.slurBuf [n] = (type2, v2, note2, grace)
     
-    def doNotations (s, note, nttn, v):
-        isTab = s.curClef and s.curClef.get (s.curStf [v], '').startswith ('tab')
+    def doNotations (s, note, nttn, isTab):
         for key, val in s.ornaments:
             if nttn.find (key) != None: note.before += [val]  # just concat all ornaments
         trem = nttn.find ('ornaments/tremolo')
@@ -850,10 +849,12 @@ class Parser:
         if r == None and (not p or not o):  # not a rest and no pitch
             s.msc.cnt.inc ('nopt', v)       # count unpitched notes
             o, p = 5,'E'                    # make it an E5 ??
+        isTab = s.curClef and s.curClef.get (s.curStf [v], '').startswith ('tab')
         nttn = n.find ('notations')     # add ornaments
-        if nttn != None: s.doNotations (note, nttn, v)
+        if nttn != None: s.doNotations (note, nttn, isTab)
         e = n.find ('stem')
-        if e != None and e.text == 'none': note.before += ['!stemless!']
+        if e != None and e.text == 'none' and (not isTab or len (s.stfMap) == 1):
+            note.before += ['!stemless!'];
         e = n.find ('accidental')
         if e != None and e.get ('parentheses') == 'yes': note.before += ['!courtesy!']
         if r != None: noot = 'x' if n.get ('print-object') == 'no' else 'z'
@@ -929,6 +930,7 @@ class Parser:
                 if strings:
                     tuning = [st.findtext ('tuning-step') + st.findtext ('tuning-octave') for st in strings]
                     cs += ' strings=%s' % ','.join (tuning) 
+                    if (len (s.stfMap) > 1): cs += ' nostems'
                 capo = stfdtl.findtext ('capo')
                 if capo: cs += ' capo=%s' % capo
             s.curClef [n] = cs                  # keep track of current clef (for percmap)
