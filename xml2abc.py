@@ -1184,8 +1184,8 @@ class Parser:
                 d[sn] = d.get (sn, 0) + 1   # ++ number of allocations for staff sn
             x = n.find ('instrument')
             if x != None: s.vceInst [v] = x.get ('id')
-            x = n.findtext ('stem')
-            if x and x != 'none': s.hasStems [v] = 1    # XML voice v has at least one stem
+            x, noRest = n.findtext ('stem'), n.find ('rest') == None
+            if noRest and (not x or x != 'none'): s.hasStems [v] = 1    # XML voice v has at least one stem
         s.stfMap, s.clefMap = {}, {}    # staff -> [voices], staff -> clef
         vks = list (vmap.keys ())
         if s.jscript or s.isSib: vks.sort ()
