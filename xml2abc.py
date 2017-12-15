@@ -775,7 +775,7 @@ class Parser:
         for finger in fingering:    # handle multiple finger annotations
             if not isTab: note.before += ['!%s!' % finger.text]   # validate text?
         strings = nttn.findall ('technical/string')
-        for snaar in strings:       # tabulature
+        for snaar in strings:       # tablature
             deco = '!%s!' % snaar.text  # no double string decos (bug in musescore)
             if isTab and deco not in note.before: note.before += [deco]
         wvln = nttn.find ('ornaments/wavy-line')
