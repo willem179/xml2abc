@@ -1132,7 +1132,8 @@ class Parser:
                 elif creator.get ('type') in ('lyricist', 'transcriber'):
                     lyricist += [line.strip () for line in creator.text.split ('\n')]
         for rights in e.findall ('identification/rights'):
-            lyricist += [line.strip () for line in rights.text.split ('\n')]
+            if rights.text:
+                lyricist += [line.strip () for line in rights.text.split ('\n')]
         for credit in e.findall('credit'):
             cs = ''.join (e.text or '' for e in credit.findall('credit-words'))
             credits += [re.sub (r'\s*[\r\n]\s*', ' ', cs)]
