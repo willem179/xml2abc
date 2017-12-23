@@ -867,7 +867,7 @@ class Parser:
             midi = s.drumInst.get (instId, abcMid (noot))
             nh =  n.findtext ('notehead', '').replace (' ','-') # replace spaces in xml notehead names for percmap
             if nh == 'x': noot = '^' + noot.replace ('^','').replace ('_','')
-            if nh == 'circle-x' or nh == 'diamond': noot = '_' + noot.replace ('^','').replace ('_','')
+            if nh in ['circle-x','diamond','triangle']: noot = '_' + noot.replace ('^','').replace ('_','')
             if nh and n.find ('notehead').get ('filled','') == 'yes': nh += '+'
             s.drumNotes [(v, noot)] = (step, midi, nh) # keep data for percussion map
         tieElms = n.findall ('tie') + n.findall ('notations/tied')  # in xml we have separate notated ties and playback ties
