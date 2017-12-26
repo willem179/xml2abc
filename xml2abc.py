@@ -869,6 +869,7 @@ class Parser:
             if nh == 'x': noot = '^' + noot.replace ('^','').replace ('_','')
             if nh in ['circle-x','diamond','triangle']: noot = '_' + noot.replace ('^','').replace ('_','')
             if nh and n.find ('notehead').get ('filled','') == 'yes': nh += '+'
+            if nh and n.find ('notehead').get ('filled','') == 'no': nh += '-'
             s.drumNotes [(v, noot)] = (step, midi, nh) # keep data for percussion map
         tieElms = n.findall ('tie') + n.findall ('notations/tied')  # in xml we have separate notated ties and playback ties
         if 'start' in [e.get ('type') for e in tieElms]:            # n can have stop and start tie
