@@ -752,7 +752,8 @@ def perc2map (abcIn):
             if r:
                 id = r.group (1);
                 if id not in maps: maps [id] = [];
-    for id in maps: abc += maps [id]
+    ids = sorted (maps.keys ())
+    for id in ids: abc += maps [id]
     for x in ls:
         if 'I:percmap' in x: continue
         if 'V:' in x or 'K:' in x:
