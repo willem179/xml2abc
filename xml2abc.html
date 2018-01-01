@@ -72,6 +72,10 @@ bars (measures). When both -n and -b options are given -b is ignored.</li>
 <li>Option <b>-o DIR</b> translates every .xml file to a separate .abc file with the same name
 into directory <b>DIR</b>. For example, <em>-o.</em> puts all abc files into the same directory where
 the input files reside.</li>
+<li>Option <b>-t</b> replaces <em>I:percmap</em> by equivalent <em>%%map</em> and <em>%%voicemap</em>.
+Also prepends a <em>%%beginsvg ... %%endsvg</em> section with definitions for the following noteheads:
+<em>x</em>, <em>circle-x</em>, <em>square</em>, <em>triangle</em> and <em>diamond</em>. This option
+produces ABC code for percussion voices that can be displayed by <em>abc2svg</em>.</li>
 <li>Option <b>-x</b> disables translation of xml line breaks. No abc score line breaks ($) will be output.</li>
 <li>Option <b>--v1</b> allocates all XML staff directions to the first voice of the staff. Normally a staff
 direction is allocated to the voice of the next note after the direction (if any).</li>

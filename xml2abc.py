@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 71
+VERSION = 72
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -309,6 +309,7 @@ class ABCoutput:
         s.volpan = int (options.m)  # 0 -> no %%MIDI, 1 -> only program, 2 -> all %%MIDI
         s.cmpL = []             # computed optimal unit length for all voices
         s.jscript = options.j   # compatibility with javascript version
+        s.tstep = options.t     # translate percmap to voicemap
         if pad:
             _, base_name = os.path.split (fnmext)
             s.outfile = open (os.path.join (pad, base_name), 'wb') # the ABC output file, binary: we do the encoding ourselves
@@ -350,6 +351,7 @@ class ABCoutput:
         defL = s.denL and s.denL or defLs [0][0] # override default unit length with -d option
         hd.append ('L:1/%d\n%sM:%s\n' % (defL, tempo, s.mtr))
         hd.append ('I:linebreak $\nK:%s\n' % s.key)
+        s.dojef = 0    # translate percmap to voicemap
         for vnum, clef in s.clefs.items ():
             ch, prg, vol, pan = midimap [vnum-1][:4]
             dmap = midimap [vnum - 1][4:]   # map of abc percussion notes to midi notes
@@ -368,12 +370,14 @@ class ABCoutput:
                 if abcMid (abcNote) != midiNote or abcNote != step:
                     if s.volpan > 0: hd.append ('%%%%MIDI drummap %s %s\n' % (abcNote, midiNote))
                     hd.append ('I:percmap %s %s %s %s\n' % (abcNote, step, midiNote, notehead))
+                    s.dojef = s.tstep
             if defL != s.cmpL [vnum-1]: # only if computed unit length different from header
                 hd.append ('L:1/%d\n' % s.cmpL [vnum-1])
         s.outlist = hd + s.outlist
 
     def writeall (s):  # determine the required encoding of the entire ABC output
         str = ''.join (s.outlist)
+        if s.dojef: str = perc2map (str)
         if s.jscript:
             s.outfile.write (str.encode ('utf-8'))  # always utf-8 in javascript version
         else:
@@ -708,6 +712,60 @@ def getMelisma (maat):                  # get melisma from notes in maat
         if note.ns [0] in 'zx': break   # stop on first rest
         ms.append ('_')
     return ' '.join (ms)
+
+def perc2map (abcIn):
+    blurp = '''%%beginsvg
+        <defs>
+        <text id="x" x="-3" y="0">&#xe263;</text>
+        <text id="x-" x="-3" y="0">&#xe263;</text>
+        <text id="x+" x="-3" y="0">&#xe263;</text>
+        <text id="normal" x="-3.7" y="0">&#xe0a3;</text>
+        <text id="normal-" x="-3.7" y="0">&#xe0a3;</text>
+        <text id="normal+" x="-3.7" y="0">&#xe0a4;</text>
+        <g id="circle-x"><text x="-3" y="0">&#xe263;</text><circle r="4" class="stroke"/></g>
+        <g id="circle-x-"><text x="-3" y="0">&#xe263;</text><circle r="4" class="stroke"/></g>
+        <path id="triangle" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="stroke-width:1.4"/>
+        <path id="triangle-" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="stroke-width:1.4"/>
+        <path id="triangle+" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="fill:#000"/>
+        <path id="square" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="stroke-width:1.4"/>
+        <path id="square-" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="stroke-width:1.4"/>
+        <path id="square+" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="fill:#000"/>
+        <path id="diamond" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="stroke-width:1.4"/>
+        <path id="diamond-" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="stroke-width:1.4"/>
+        <path id="diamond+" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="fill:#000"/>
+        </defs>
+    %%endsvg'''
+    fillmap = {'diamond':1, 'triangle':1, 'square':1, 'normal':1};
+    abc = map (lambda x: x.strip (), blurp.splitlines ())
+    id='default'
+    maps = {'default': []};
+    r1 = re.compile (r'V:\s*(\S+)')
+    ls = abcIn.splitlines ()
+    for x in ls:
+        if 'I:percmap' in x:
+            noot, step, midi, kop = map (lambda x: x.strip (), x.split ()[1:])
+            if kop in fillmap: kop = kop + '+' + ',' + kop
+            x = '%%%%map perc%s %s print=%s midi=%s heads=%s' % (id, noot, step, midi, kop)
+            maps [id].append (x)
+        if 'V:' in x:
+            r = r1.match (x)
+            if r:
+                id = r.group (1);
+                if id not in maps: maps [id] = [];
+    for id in maps: abc += maps [id]
+    for x in ls:
+        if 'I:percmap' in x: continue
+        if 'V:' in x or 'K:' in x:
+            r = r1.match (x)
+            if r: id = r.group (1)
+            if len (maps [id]) == 0: id = 'default'
+            abc.append (x)
+            if 'perc' in x and 'map=' not in x: x += ' map=perc';
+            if 'map=perc' in x and len (maps [id]) > 0: abc.append ('%%voicemap perc' + id);
+            if 'map=off' in x: abc.append ('%%voicemap');            
+        else:
+            abc.append (x)
+    return '\n'.join (abc) + '\n'
 
 #----------------
 # parser
@@ -1303,7 +1361,7 @@ if __name__ == '__main__':
     parser.add_option ("-x", action="store_true", help="output no line breaks")
     parser.add_option ("-p", action="store", help="pageformat PFMT (cm) = scale, pageheight, pagewidth, leftmargin, rightmargin, topmargin, botmargin", default='', metavar='PFMT')
     parser.add_option ("-j", action="store_true", help="switch for compatibility with javascript version")
-    parser.add_option ("-t", action="store_true", help="staff step value in percmap depends on clef")   # simplifies later translation of I:percmap to %%map
+    parser.add_option ("-t", action="store_true", help="translate I:percmap to %%voicemap")
     parser.add_option ("--v1", action="store_true", help="start-stop directions allways to first voice of staff")
     parser.add_option ("--noped", action="store_false", help="skip all pedal directions", dest='ped', default=True)
     options, args = parser.parse_args ()
