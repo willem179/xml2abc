@@ -2,7 +2,7 @@
 # coding=latin-1
 '''
 Copyright (C) 2012: W.G. Vree
-Contributions: M. Tarenskeen, N. Liberg, Paul Villiger, Janus Meuris
+Contributions: M. Tarenskeen, N. Liberg, Paul Villiger, Janus Meuris, Larry Myerscough
 
 This program is free software; you can redistribute it and/or modify it under the terms of the
 GNU General Public License as published by the Free Software Foundation; either version 2 of
@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 72
+VERSION = 73
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -68,6 +68,48 @@ dynamics_map = {    # for direction/direction-type/dynamics/
     'sfz':  '!sfz!',
 }
 
+percSvg = '''%%beginsvg
+    <defs>
+    <text id="x" x="-3" y="0">&#xe263;</text>
+    <text id="x-" x="-3" y="0">&#xe263;</text>
+    <text id="x+" x="-3" y="0">&#xe263;</text>
+    <text id="normal" x="-3.7" y="0">&#xe0a3;</text>
+    <text id="normal-" x="-3.7" y="0">&#xe0a3;</text>
+    <text id="normal+" x="-3.7" y="0">&#xe0a4;</text>
+    <g id="circle-x"><text x="-3" y="0">&#xe263;</text><circle r="4" class="stroke"/></g>
+    <g id="circle-x-"><text x="-3" y="0">&#xe263;</text><circle r="4" class="stroke"/></g>
+    <path id="triangle" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="stroke-width:1.4"/>
+    <path id="triangle-" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="stroke-width:1.4"/>
+    <path id="triangle+" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="fill:#000"/>
+    <path id="square" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="stroke-width:1.4"/>
+    <path id="square-" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="stroke-width:1.4"/>
+    <path id="square+" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="fill:#000"/>
+    <path id="diamond" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="stroke-width:1.4"/>
+    <path id="diamond-" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="stroke-width:1.4"/>
+    <path id="diamond+" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="fill:#000"/>
+    </defs>
+    %%endsvg'''
+
+tabSvg = '''%%beginsvg
+    <style type="text/css">
+    .bf {font-family:sans-serif; font-size:7px}
+    </style>
+    <defs>
+    <rect id="clr" x="-6" y="-1" width="6" height="5" fill="white"/>
+    <rect id="clr2" x="-6" y="-1" width="11" height="5" fill="white"/>'''
+
+kopSvg = '''
+    <g id="kop%s" class="bf">
+    <use xlink:href="#clr"/>
+    <text x="-5" y="3">%s</text>
+    </g>'''
+
+kopSvg2 = '''
+    <g id="kop%s" class="bf">
+    <use xlink:href="#clr2"/>
+    <text x="-5" y="3">%s</text>
+    </g>'''
+
 def info (s, warn=1): sys.stderr.write ((warn and '-- ' or '') + s + '\n')
 
 #-------------------
@@ -100,6 +142,7 @@ class Note:
         s.after = ''    # the same after the note/chord
         s.ns = n and [n] or []  # notes in the chord
         s.lyrs = {}     # {number -> syllabe}
+        s.tab = None    # (string number, fret number)
 
 class Elem:
     def __init__ (s, string):
@@ -325,7 +368,7 @@ class ABCoutput:
     def add (s, str):
         s.outlist.append (str + '\n')   # collect all ABC output
 
-    def mkHeader (s, stfmap, partlist, midimap): # stfmap = [parts], part = [staves], stave = [voices]
+    def mkHeader (s, stfmap, partlist, midimap, vmpdct, koppen): # stfmap = [parts], part = [staves], stave = [voices]
         accVce, accStf, staffs = [], [], stfmap[:]  # staffs is consumed
         for x in partlist:              # collect partnames into accVce and staff groups into accStf
             try: prgroupelem (x, ('', ''), '', stfmap, accVce, accStf)
@@ -351,12 +394,16 @@ class ABCoutput:
         defL = s.denL and s.denL or defLs [0][0] # override default unit length with -d option
         hd.append ('L:1/%d\n%sM:%s\n' % (defL, tempo, s.mtr))
         hd.append ('I:linebreak $\nK:%s\n' % s.key)
+        for vx in vmpdct: hd.extend (vmpdct [vx])
         s.dojef = 0    # translate percmap to voicemap
         for vnum, clef in s.clefs.items ():
             ch, prg, vol, pan = midimap [vnum-1][:4]
             dmap = midimap [vnum - 1][4:]   # map of abc percussion notes to midi notes
             if dmap and 'perc' not in clef: clef = (clef + ' map=perc').strip ();
             hd.append ('V:%d %s %s\n' % (vnum, clef, clfnms.get (vnum, '')))
+            if vnum in vmpdct:
+                hd.append ('%%%%voicemap tab%d\n' % vnum)
+                hd.append ('K:none\nM:none\n%%clef none\n%%staffscale 1.6\n%%flatbeams true\n%%stemdir down\n')
             if s.volpan > 1:    # option -m 2 -> output all recognized midi commands when needed and present in xml
                 if ch > 0 and ch != vnum: hd.append ('%%%%MIDI channel %d\n' % ch)
                 if prg > 0:  hd.append ('%%%%MIDI program %d\n' % (prg - 1))
@@ -374,6 +421,9 @@ class ABCoutput:
             if defL != s.cmpL [vnum-1]: # only if computed unit length different from header
                 hd.append ('L:1/%d\n' % s.cmpL [vnum-1])
         s.outlist = hd + s.outlist
+        ks = [kopSvg2 % (k, k) if len (k) > 1 else kopSvg % (k, k) for k in koppen]
+        if ks:   # prepend svg defs for the tab voices
+            s.outlist = [tabSvg] + ks + ['</defs>\n%%endsvg\n'] + s.outlist
 
     def writeall (s):  # determine the required encoding of the entire ABC output
         str = ''.join (s.outlist)
@@ -543,6 +593,7 @@ def outVoice (measure, divs, im, ip, unitL):    # note/elem objects of one measu
             s += nx.after
             nospace = nx.beam
         else:
+            if isinstance (nx.str, types.ListType): nx.str = nx.str [0]
             s = nx.str
             nospace = 1
         if nospace: vs.append (s)
@@ -714,29 +765,8 @@ def getMelisma (maat):                  # get melisma from notes in maat
     return ' '.join (ms)
 
 def perc2map (abcIn):
-    blurp = '''%%beginsvg
-        <defs>
-        <text id="x" x="-3" y="0">&#xe263;</text>
-        <text id="x-" x="-3" y="0">&#xe263;</text>
-        <text id="x+" x="-3" y="0">&#xe263;</text>
-        <text id="normal" x="-3.7" y="0">&#xe0a3;</text>
-        <text id="normal-" x="-3.7" y="0">&#xe0a3;</text>
-        <text id="normal+" x="-3.7" y="0">&#xe0a4;</text>
-        <g id="circle-x"><text x="-3" y="0">&#xe263;</text><circle r="4" class="stroke"/></g>
-        <g id="circle-x-"><text x="-3" y="0">&#xe263;</text><circle r="4" class="stroke"/></g>
-        <path id="triangle" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="stroke-width:1.4"/>
-        <path id="triangle-" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="stroke-width:1.4"/>
-        <path id="triangle+" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="fill:#000"/>
-        <path id="square" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="stroke-width:1.4"/>
-        <path id="square-" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="stroke-width:1.4"/>
-        <path id="square+" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="fill:#000"/>
-        <path id="diamond" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="stroke-width:1.4"/>
-        <path id="diamond-" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="stroke-width:1.4"/>
-        <path id="diamond+" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="fill:#000"/>
-        </defs>
-    %%endsvg'''
     fillmap = {'diamond':1, 'triangle':1, 'square':1, 'normal':1};
-    abc = map (lambda x: x.strip (), blurp.splitlines ())
+    abc = map (lambda x: x.strip (), percSvg.splitlines ())
     id='default'
     maps = {'default': []};
     r1 = re.compile (r'V:\s*(\S+)')
@@ -767,6 +797,13 @@ def perc2map (abcIn):
         else:
             abc.append (x)
     return '\n'.join (abc) + '\n'
+
+def addoct (ptc, o):    # xml staff step, xml octave number
+    p = ptc
+    if o > 4: p = ptc.lower ()
+    if o > 5: p = p + (o-5) * "'"
+    if o < 4: p = p + (4-o) * ","
+    return p            # abc pitch == abc note without accidental
 
 #----------------
 # parser
@@ -802,6 +839,9 @@ class Parser:
         s.dirtov1 = options.v1  # all directions to first voice of staff
         s.ped = options.ped     # render pedal directions
         s.pedVce = None   # voice for pedal directions
+        s.repeat_str = {} # staff number -> [measure number, repeat-text]
+        s.tabVceMap = {}  # abc voice num -> [%%map ...] for tab voices
+        s.koppen = {}     # noteheads needed for %%map
 
     def matchSlur (s, type2, n, v2, note2, grace, stopgrace): # match slur number n in voice v2, add abc code to before/after
         if type2 not in ['start', 'stop']: return   # slur type continue has no abc equivalent
@@ -833,10 +873,14 @@ class Parser:
         fingering = nttn.findall ('technical/fingering')
         for finger in fingering:    # handle multiple finger annotations
             if not isTab: note.before += ['!%s!' % finger.text]   # validate text?
-        strings = nttn.findall ('technical/string')
-        for snaar in strings:       # tablature
-            deco = '!%s!' % snaar.text  # no double string decos (bug in musescore)
-            if isTab and deco not in note.before: note.before += [deco]
+        snaar = nttn.find ('technical/string')
+        if snaar != None and isTab:
+            if s.tstep:
+                fret = nttn.find ('technical/fret')
+                if fret != None: note.tab = (snaar.text, fret.text)
+            else:
+                deco = '!%s!' % snaar.text  # no double string decos (bug in musescore)
+                if deco not in note.before: note.before += [deco]
         wvln = nttn.find ('ornaments/wavy-line')
         if wvln != None:
             if   wvln.get ('type') == 'start': note.before = ['!trill(!'] + note.before # keep left-right order!
@@ -848,15 +892,38 @@ class Parser:
             if   glis.get ('type') == 'start': note.before = ['!%s(!' % lt] + note.before # keep left-right order!
             elif glis.get ('type') == 'stop': note.before = ['!%s)!' % lt] + note.before
 
-    def ntAbc (s, ptc, o, note, v):  # pitch, octave -> abc notation
+    def tabnote (s, alt, ptc, oct, v, ntrec):
+        alt = int (alt or '0')
+        snaar_nw, fret_nw = ntrec.tab
+        nt = ['__','_','','^','^^'][alt+2] + addoct (ptc, oct)
+        snaar, fret = s.tabmap.get ((v, nt), ('', ''))
+        if snaar and snaar_nw != snaar: # same note on different string
+            ns = 'ABCDEFGA'
+            if alt != 1:
+                ptc = ns [ns.find (ptc) - 1]
+                alt = alt + 2
+            else:
+                ptc = ns [ns.find (ptc) + 1]
+                alt = alt - 2
+            nt_new = ['__','_','','^','^^'][alt+2] + addoct (ptc, oct)
+            snaar2, fret2 = s.tabmap.get ((v, nt_new), ('', ''))
+            if snaar2 and snaar2 != snaar_nw:
+                fmt = 'overwritten: voice %d, note: %3s, string %s, fret: %2s by string: %s, fret %s'
+                info (fmt % (v, nt_new, snaar2, fret2, snaar_nw, fret_nw), 1)
+            nt = nt_new
+        s.tabmap [v, nt] = ntrec.tab    # for tablature map (voice, note) -> (string, fret)
+        return nt                       # ABC code always in key C (with midi pitch alterations)
+
+    def ntAbc (s, ptc, oct, note, v, ntrec, isTab): # pitch, octave -> abc notation
         acc2alt = {'double-flat':-2,'flat-flat':-2,'flat':-1,'natural':0,'sharp':1,'sharp-sharp':2,'double-sharp':2}
-        o += s.clefOct.get (s.curStf [v], 0)  # minus clef-octave-change value
-        p = ptc
-        if o > 4: p = ptc.lower ()
-        if o > 5: p = p + (o-5) * "'"
-        if o < 4: p = p + (4-o) * ","
+        oct += s.clefOct.get (s.curStf [v], 0)  # minus clef-octave-change value
         acc = note.findtext ('accidental')  # should be the notated accidental
         alt = note.findtext ('pitch/alter') # pitch alteration (midi)
+        if ntrec.tab: return s.tabnote (alt, ptc, oct, v, ntrec)    # implies s.tstep is true (options.t was given)
+        elif isTab and s.tstep:
+            nt = ['__','_','','^','^^'][int (alt or '0') + 2] + addoct (ptc, oct)
+            info ('no string notation found for note %s in voice %d' % (nt, v), 1)
+        p = addoct (ptc, oct)
         if alt == None and s.msralts.get (ptc, 0): alt = 0  # no alt but key implies alt -> natural!!
         if alt == None and (p, v) in s.curalts: alt = 0     # no alt but previous note had one -> natural!!
         if acc == None and alt == None: return p    # no acc, no alt
@@ -912,12 +979,12 @@ class Parser:
         nttn = n.find ('notations')     # add ornaments
         if nttn != None: s.doNotations (note, nttn, isTab)
         e = n.find ('stem')
-        if e != None and e.text == 'none' and (not isTab or v in s.hasStems):
+        if e != None and e.text == 'none' and (not isTab or v in s.hasStems or s.tstep):
             note.before += ['!stemless!'];
         e = n.find ('accidental')
         if e != None and e.get ('parentheses') == 'yes': note.before += ['!courtesy!']
-        if r != None: noot = 'x' if n.get ('print-object') == 'no' else 'z'
-        else: noot = s.ntAbc (p, int (o), n, v)
+        if r != None: noot = 'x' if n.get ('print-object') == 'no' or isTab else 'z'
+        else: noot = s.ntAbc (p, int (o), n, v, note, isTab)
         if n.find ('unpitched') != None:
             clef = s.curClef [s.curStf [v]]     # the current clef for this voice
             step = staffStep (p, int (o), clef, s.tstep)        # (clef independent) step value of note on the staff
@@ -971,6 +1038,24 @@ class Parser:
             if first: abcOut.mtr = mtr          # first measure -> header
             else: s.msr.attr += '[M:%s]' % mtr # otherwise -> voice
             s.msr.mdur = (s.msr.divs * int (beats) * 4) // int (unit)    # duration of measure in xml-divisions
+        for ms in e.findall('measure-style'):
+            n = int (ms.get ('number', '1'))    # staff number
+            voices = s.stfMap [n]               # all voices of staff n
+            for mr in ms.findall('measure-repeat'):
+                ty = mr.get('type')
+                if ty == 'start':               # remember start measure number and text voor each staff
+                    s.repeat_str [n] = [s.msr.ixm, mr.text]
+                    for v in voices:            # insert repeat into all voices, value will be overwritten at stop
+                        s.msc.insertElem (v, s.repeat_str [n])
+                elif ty == 'stop':              # calculate repeat measure count for this staff n
+                    start_ix, text_ = s.repeat_str [n]
+                    repeat_count = s.msr.ixm - start_ix
+                    if text_:
+                        mid_str =  "%s " % text_
+                        repeat_count /= int (text_)
+                    else:
+                        mid_str = ""            # overwrite repeat with final string
+                    s.repeat_str [n][0] = '[I:repeat %s%d]' % (mid_str, repeat_count)
         toct = e.findtext ('transpose/octave-change', '')
         if toct: steps += 12 * int (toct)       # extra transposition of toct octaves
         for clef in e.findall ('clef'):         # a part can have multiple staves
@@ -985,7 +1070,9 @@ class Parser:
             stfdtl = e.find ('staff-details')
             if stfdtl and int (stfdtl.get ('number', '1')) == n:
                 lines = stfdtl.findtext ('staff-lines')
-                if lines: cs += ' stafflines=%s' % lines
+                if lines:
+                    cs += ' stafflines=%s' % lines
+                    s.stafflines = int (lines)  # remember for tab staves
                 strings = stfdtl.findall ('staff-tuning')
                 if strings:
                     tuning = [st.findtext ('tuning-step') + st.findtext ('tuning-octave') for st in strings]
@@ -1285,6 +1372,14 @@ class Parser:
             else:  xs.append ((vabc, defInstr   + ds))  # only one instrument for this part
         xs.sort ()  # put abc voices in order
         s.midiMap.extend ([midi for v, midi in xs])
+        snaarmap = ['E','G','B','d', 'f', 'a', "c'", "e'"]
+        for (v, noot), (snaar, fret) in s.tabmap.items ():  # add %%map's for all tab voices
+            vabc = vvmap [v]
+            snaar = s.stafflines - int (snaar)
+            xs = s.tabVceMap.get (vabc, [])
+            xs.append ('%%%%map tab%d %s print=%s heads=kop%s\n' % (vabc, noot, snaarmap [snaar], fret))
+            s.tabVceMap [vabc] = xs
+            s.koppen [fret] = 1  # collect noteheads for SVG defs
 
     def parse (s, fobj):
         vvmapAll = {}   # collect xml->abc voice maps (vvmap) of all parts
@@ -1298,6 +1393,8 @@ class Parser:
             s.locStaffMap (p, maten)        # {voice -> staff} for this part
             s.drumNotes = {}    # (xml voice, abc note) -> (midi note, note head)
             s.clefOct = {}      # xml staff number -> current clef-octave-change
+            s.tabmap = {}       # (xml voice, abc note) -> (string, fret)
+            s.stafflines = 5
             s.msc.initVoices (newPart = 1)  # create all voices
             aantalHerhaald = 0  # keep track of number of repititions
             herhaalMaat = 0     # target measure of the repitition
@@ -1339,7 +1436,7 @@ class Parser:
             s.addMidiMap (ip, vvmap)
             vvmapAll.update (vvmap)
         if vvmapAll:            # skip output if no part has any notes
-            abcOut.mkHeader (s.gStfMap, partlist, s.midiMap)
+            abcOut.mkHeader (s.gStfMap, partlist, s.midiMap, s.tabVceMap, s.koppen)
             abcOut.writeall ()
         else: info ('nothing written, %s has no notes ...' % abcOut.fnmext)
 
