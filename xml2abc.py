@@ -353,6 +353,7 @@ class ABCoutput:
         s.cmpL = []             # computed optimal unit length for all voices
         s.jscript = options.j   # compatibility with javascript version
         s.tstep = options.t     # translate percmap to voicemap
+        s.stemless = 0          # use U:s=!stemless!
         if pad:
             _, base_name = os.path.split (fnmext)
             s.outfile = open (os.path.join (pad, base_name), 'wb') # the ABC output file, binary: we do the encoding ourselves
@@ -394,6 +395,7 @@ class ABCoutput:
         defL = s.denL and s.denL or defLs [0][0] # override default unit length with -d option
         hd.append ('L:1/%d\n%sM:%s\n' % (defL, tempo, s.mtr))
         hd.append ('I:linebreak $\nK:%s\n' % s.key)
+        if s.stemless: hd.append ('U:s=!stemless!\n')
         for vx in vmpdct: hd.extend (vmpdct [vx])
         s.dojef = 0    # translate percmap to voicemap
         for vnum, clef in s.clefs.items ():
@@ -980,7 +982,7 @@ class Parser:
         if nttn != None: s.doNotations (note, nttn, isTab)
         e = n.find ('stem')
         if e != None and e.text == 'none' and (not isTab or v in s.hasStems or s.tstep):
-            note.before += ['!stemless!'];
+            note.before += ['s']; abcOut.stemless = 1;
         e = n.find ('accidental')
         if e != None and e.get ('parentheses') == 'yes': note.before += ['!courtesy!']
         if r != None: noot = 'x' if n.get ('print-object') == 'no' or isTab else 'z'
