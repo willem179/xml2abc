@@ -98,17 +98,8 @@ tabSvg = '''%%beginsvg
     <rect id="clr" x="-6" y="-1" width="6" height="5" fill="white"/>
     <rect id="clr2" x="-6" y="-1" width="11" height="5" fill="white"/>'''
 
-kopSvg = '''
-    <g id="kop%s" class="bf">
-    <use xlink:href="#clr"/>
-    <text x="-5" y="3">%s</text>
-    </g>'''
-
-kopSvg2 = '''
-    <g id="kop%s" class="bf">
-    <use xlink:href="#clr2"/>
-    <text x="-5" y="3">%s</text>
-    </g>'''
+kopSvg = '<g id="kop%s" class="bf"><use xlink:href="#clr"/><text x="-5" y="3">%s</text></g>\n'
+kopSvg2 = '<g id="kop%s" class="bf"><use xlink:href="#clr2"/><text x="-5" y="3">%s</text></g>\n'
 
 def info (s, warn=1): sys.stderr.write ((warn and '-- ' or '') + s + '\n')
 
@@ -396,7 +387,8 @@ class ABCoutput:
         hd.append ('L:1/%d\n%sM:%s\n' % (defL, tempo, s.mtr))
         hd.append ('I:linebreak $\nK:%s\n' % s.key)
         if s.stemless: hd.append ('U:s=!stemless!\n')
-        for vx in vmpdct: hd.extend (vmpdct [vx])
+        vxs = sorted (vmpdct.keys ())
+        for vx in vxs: hd.extend (vmpdct [vx])
         s.dojef = 0    # translate percmap to voicemap
         for vnum, clef in s.clefs.items ():
             ch, prg, vol, pan = midimap [vnum-1][:4]
@@ -423,9 +415,11 @@ class ABCoutput:
             if defL != s.cmpL [vnum-1]: # only if computed unit length different from header
                 hd.append ('L:1/%d\n' % s.cmpL [vnum-1])
         s.outlist = hd + s.outlist
-        ks = [kopSvg2 % (k, k) if len (k) > 1 else kopSvg % (k, k) for k in koppen]
+        ks = sorted (map (int, koppen.keys ()))
+        ks = [kopSvg2 % (k, k) if k > 9 else kopSvg % (k, k) for k in ks]
         if ks:   # prepend svg defs for the tab voices
-            s.outlist = [tabSvg] + ks + ['</defs>\n%%endsvg\n'] + s.outlist
+            tbs = map (lambda x: x.strip () + '\n', tabSvg.splitlines ())
+            s.outlist = tbs + ks + ['</defs>\n%%endsvg\n'] + s.outlist
 
     def writeall (s):  # determine the required encoding of the entire ABC output
         str = ''.join (s.outlist)
@@ -1375,7 +1369,9 @@ class Parser:
         xs.sort ()  # put abc voices in order
         s.midiMap.extend ([midi for v, midi in xs])
         snaarmap = ['E','G','B','d', 'f', 'a', "c'", "e'"]
-        for (v, noot), (snaar, fret) in s.tabmap.items ():  # add %%map's for all tab voices
+        for k in sorted (s.tabmap.keys ()): # add %%map's for all tab voices
+            v, noot = k;
+            snaar, fret = s.tabmap [k];
             vabc = vvmap [v]
             snaar = s.stafflines - int (snaar)
             xs = s.tabVceMap.get (vabc, [])
