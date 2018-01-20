@@ -95,11 +95,11 @@ tabSvg = '''%%beginsvg
     .bf {font-family:sans-serif; font-size:7px}
     </style>
     <defs>
-    <rect id="clr" x="-6" y="-1" width="6" height="5" fill="white"/>
-    <rect id="clr2" x="-6" y="-1" width="11" height="5" fill="white"/>'''
+    <rect id="clr" x="-3" y="-1" width="6" height="5" fill="white"/>
+    <rect id="clr2" x="-3" y="-1" width="11" height="5" fill="white"/>'''
 
-kopSvg = '<g id="kop%s" class="bf"><use xlink:href="#clr"/><text x="-5" y="3">%s</text></g>\n'
-kopSvg2 = '<g id="kop%s" class="bf"><use xlink:href="#clr2"/><text x="-5" y="3">%s</text></g>\n'
+kopSvg = '<g id="kop%s" class="bf"><use xlink:href="#clr"/><text x="-2" y="3">%s</text></g>\n'
+kopSvg2 = '<g id="kop%s" class="bf"><use xlink:href="#clr2"/><text x="-2" y="3">%s</text></g>\n'
 
 def info (s, warn=1): sys.stderr.write ((warn and '-- ' or '') + s + '\n')
 
@@ -345,6 +345,7 @@ class ABCoutput:
         s.jscript = options.j   # compatibility with javascript version
         s.tstep = options.t     # translate percmap to voicemap
         s.stemless = 0          # use U:s=!stemless!
+        s.shiftStem = options.s # shift note heads 3 units left
         if pad:
             _, base_name = os.path.split (fnmext)
             s.outfile = open (os.path.join (pad, base_name), 'wb') # the ABC output file, binary: we do the encoding ourselves
@@ -415,10 +416,13 @@ class ABCoutput:
             if defL != s.cmpL [vnum-1]: # only if computed unit length different from header
                 hd.append ('L:1/%d\n' % s.cmpL [vnum-1])
         s.outlist = hd + s.outlist
-        ks = sorted (map (int, koppen.keys ()))
-        ks = [kopSvg2 % (k, k) if k > 9 else kopSvg % (k, k) for k in ks]
-        if ks:   # prepend svg defs for the tab voices
-            tbs = map (lambda x: x.strip () + '\n', tabSvg.splitlines ())
+        if koppen:  # output SVG stuff needed for tablature
+            k1 = kopSvg.replace ('-2','-5') if s.shiftStem else kopSvg  # shift note heads 3 units left
+            k2 = kopSvg2.replace ('-2','-5') if s.shiftStem else kopSvg2
+            tb = tabSvg.replace ('-3','-6') if s.shiftStem else tabSvg
+            ks = sorted (map (int, koppen.keys ()))                     # javascript compatibility
+            ks = [k2 % (k, k) if k > 9 else k1 % (k, k) for k in ks]
+            tbs = map (lambda x: x.strip () + '\n', tb.splitlines ())   # javascript compatibility
             s.outlist = tbs + ks + ['</defs>\n%%endsvg\n'] + s.outlist
 
     def writeall (s):  # determine the required encoding of the entire ABC output
@@ -1445,7 +1449,7 @@ if __name__ == '__main__':
     from optparse import OptionParser
     from glob import glob
     from zipfile import ZipFile 
-    parser = OptionParser (usage='%prog [-h] [-u] [-m] [-c C] [-d D] [-n CPL] [-b BPL] [-o DIR] [-v V] [-x] [-p PFMT] <file1> [<file2> ...]', version=str(VERSION))
+    parser = OptionParser (usage='%prog [-h] [-u] [-m] [-c C] [-d D] [-n CPL] [-b BPL] [-o DIR] [-v V] [-x] [-p PFMT] [-t] [-s] <file1> [<file2> ...]', version=str(VERSION))
     parser.add_option ("-u", action="store_true", help="unfold simple repeats")
     parser.add_option ("-m", action="store", help="0 -> no %%MIDI, 1 -> minimal %%MIDI, 2-> all %%MIDI", default=0)
     parser.add_option ("-c", action="store", type="int", help="set credit text filter to C", default=0, metavar='C')
@@ -1457,7 +1461,8 @@ if __name__ == '__main__':
     parser.add_option ("-x", action="store_true", help="output no line breaks")
     parser.add_option ("-p", action="store", help="pageformat PFMT (cm) = scale, pageheight, pagewidth, leftmargin, rightmargin, topmargin, botmargin", default='', metavar='PFMT')
     parser.add_option ("-j", action="store_true", help="switch for compatibility with javascript version")
-    parser.add_option ("-t", action="store_true", help="translate I:percmap to %%voicemap")
+    parser.add_option ("-t", action="store_true", help="translate perc- and tab-staff to ABC code with %%map, %%voicemap")
+    parser.add_option ("-s", action="store_true", help="shift node heads 3 units left in a tab staff")
     parser.add_option ("--v1", action="store_true", help="start-stop directions allways to first voice of staff")
     parser.add_option ("--noped", action="store_false", help="skip all pedal directions", dest='ped', default=True)
     options, args = parser.parse_args ()
