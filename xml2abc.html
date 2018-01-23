@@ -77,8 +77,8 @@ the input files reside.</li>
 with definitions for noteheads.<br>
 For percussion only the following MusicXML noteheads are supported:
 <em>x</em>, <em>circle-x</em>, <em>square</em>, <em>triangle</em> and <em>diamond</em>.<br>
-The tablature translation can map one note to at most 2 different strings (per voice).
-If you use more strings for one note (in one voice), it will overwrite the second string/fret mapping.
+The tablature translation can map one note (one pitch) to at most 2 different strings (per voice).
+If you use more strings for one and note (in one voice), it will overwrite the second string/fret mapping.
 </li>
 <li>Option <b>-s</b> Shift note heads in a tab staff 3 units to the left. This will draw the note heads
 straight above the stems. However, ties and dots with seem shifted too much to the right. This option
@@ -95,18 +95,6 @@ numbers separated by comma's and without any spaces! Alle measures are in centim
 value is the same as used by abcm2ps, i.e. a floating point number somewhere around 1.0</li>
 <li>Option <b>-pf</b> (this is option -p without number list) Enables the translation of xml page format
 specifications into abc page format instructions (%%pageheight etc).</li>
-<li>Option <b>--v1</b> will allocate staff related directions <em>allways</em> to first ABC voice of the staff.
-Normally staff directions go to the voice of the next note/rest (if one is present).<br>
-Many decorations in ABC should not belong to a voice, but to a staff. For instance, text annotations, 
-chord names, ottava's, wedges, dynamics, coda, segno and many others should not be associated with
-only one voice.<br>
-Because a proper staff concept is lacking in ABC this causes problems with the translation of staff
-related directions and other properties of MusicXML. The crude solution taken by <em>xml2abc</em> is
-to allocate a staff direction to the voice of the next note after the direction and to the first
-voice of the staff otherwise.
-</li>
-<li>Option <b>--noped</b> skips all pedal directions. Sometimes pedal directions clutter a score too much.
-With this option they are left out altogether.</li>
 </ul>
 <h3>Download</h3>
 <p>The python script: <a href="http://wim.vree.org/svgParse/xml2abc.py-VERSION.zip">xml2abc.py-VERSION.zip</a>
