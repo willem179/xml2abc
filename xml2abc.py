@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 73
+VERSION = 74
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -134,6 +134,7 @@ class Note:
         s.ns = n and [n] or []  # notes in the chord
         s.lyrs = {}     # {number -> syllabe}
         s.tab = None    # (string number, fret number)
+        s.ntdec = ''    # !string!, !courtesy!
 
 class Elem:
     def __init__ (s, string):
@@ -208,7 +209,7 @@ class Music:
         s.voices [v].append (obj)
 
     def appendNote (s, v, note, noot):
-        note.ns.append (noot)
+        note.ns.append (note.ntdec + noot)
         s.appendObj (v, note, int (note.dur))
         if noot != 'z' and noot != 'x':         # real notes and grace notes
             s.lastnote = note       # remember last note for later modifications (chord, grace)
@@ -227,12 +228,11 @@ class Music:
         return 0 # no previous lyrics in voice or line number
 
     def addChord (s, note, noot):   # careful: we assume that chord notes follow immediately
-        if '!courtesy!' in s.lastnote.before:       # put courtesy into the note, right before the accidental
-            s.lastnote.before.remove ('!courtesy!') # the other before-decorations are prepended in outVoice
-            s.lastnote.ns [0] = '!courtesy!' + s.lastnote.ns [0]
-        for d in note.before:
-            if d not in s.lastnote.before: noot = d + noot # put decorations inside chord
-        s.lastnote.ns.append (noot)
+        for d in note.before:       # put all decorations before chord
+            if d not in s.lastnote.before:
+                s.lastnote.before = [d] + s.lastnote.before
+        s.lastnote.ns.append (note.ntdec + noot)
+
     def addBar (s, lbrk, m): # linebreak, measure data
         if m.mdur and s.maxtime > m.mdur: info ('measure %d in part %d longer than metre' % (m.ixm+1, m.ixp+1))
         s.tijd = s.maxtime              # the time of the bar lines inserted here
@@ -872,7 +872,7 @@ class Parser:
             if type != 'stop': note.before = ['!%s%s!' % (int (trem.text) * '/', duo)] + note.before
         fingering = nttn.findall ('technical/fingering')
         for finger in fingering:    # handle multiple finger annotations
-            if not isTab: note.before += ['!%s!' % finger.text]   # validate text?
+            if not isTab: note.ntdec += '!%s!' % finger.text    # validate text?
         snaar = nttn.find ('technical/string')
         if snaar != None and isTab:
             if s.tstep:
@@ -880,7 +880,7 @@ class Parser:
                 if fret != None: note.tab = (snaar.text, fret.text)
             else:
                 deco = '!%s!' % snaar.text  # no double string decos (bug in musescore)
-                if deco not in note.before: note.before += [deco]
+                if deco not in note.ntdec: note.ntdec += deco
         wvln = nttn.find ('ornaments/wavy-line')
         if wvln != None:
             if   wvln.get ('type') == 'start': note.before = ['!trill(!'] + note.before # keep left-right order!
@@ -982,7 +982,7 @@ class Parser:
         if e != None and e.text == 'none' and (not isTab or v in s.hasStems or s.tstep):
             note.before += ['s']; abcOut.stemless = 1;
         e = n.find ('accidental')
-        if e != None and e.get ('parentheses') == 'yes': note.before += ['!courtesy!']
+        if e != None and e.get ('parentheses') == 'yes': note.ntdec += '!courtesy!'
         if r != None: noot = 'x' if n.get ('print-object') == 'no' or isTab else 'z'
         else: noot = s.ntAbc (p, int (o), n, v, note, isTab)
         if n.find ('unpitched') != None:
