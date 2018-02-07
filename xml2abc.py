@@ -1395,6 +1395,7 @@ class Parser:
             s.locStaffMap (p, maten)        # {voice -> staff} for this part
             s.drumNotes = {}    # (xml voice, abc note) -> (midi note, note head)
             s.clefOct = {}      # xml staff number -> current clef-octave-change
+            s.curClef = {}      # xml staff number -> current abc clef
             s.tabmap = {}       # (xml voice, abc note) -> (string, fret)
             s.stafflines = 5
             s.msc.initVoices (newPart = 1)  # create all voices
