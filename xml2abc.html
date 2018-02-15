@@ -45,12 +45,15 @@ without significant loss of information.</p>
 to ABC-notation. Output goes to stdout unless the -o option is given. Wildcards in
 file names are expanded.
 </p>
-<ul>
+<a name="opts"></a><ul>
 <li>Option <b>-h</b> prints help message with explanation of the options.</li>
 <li>Option <b>-u</b> turns off repeat translation and unfolds simple repeats instead.</li>
-<li>Option <b>-m</b> output commands for midi volume and -panning and the channel number when it is
-different from the voice number. These commands are output in addition to the midi program number
-which is always output when it is present in the xml file.</li>
+<li>Option <b>-m M</b> When <b>M</b>=1 only <em>%%MIDI program</em> commands are output. For a percussion voice
+also <em>%%MIDI channel</em> and <em>%%MIDI drummap</em> statements are added.
+When <b>M</b>=2 all supported midi commands are output:
+<em>%%MIDI channel</em>, <em>%%MIDI program</em>, <em>%%MIDI contol 7</em>, <em>%%MIDI control 10</em> and
+<em>%%MIDI drummap</em> for a percussion voice. The default is <b>M</b>=0, which outputs no midi commands.
+</li>
 <li>Option <b>-c C</b> sets the filter level of the credit filter. This filter tries to eliminate
 redundant T: fields. The level C goes from 0 (default) to 6 (no filtering). A higher level
 does less filtering. The default filters as much as possible and only includes the xml
