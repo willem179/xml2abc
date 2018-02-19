@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 74
+VERSION = 75
 
 python3 = sys.version_info.major > 2
 if python3:
