@@ -420,8 +420,8 @@ class ABCoutput:
             k1 = kopSvg.replace ('-2','-5') if s.shiftStem else kopSvg  # shift note heads 3 units left
             k2 = kopSvg2.replace ('-2','-5') if s.shiftStem else kopSvg2
             tb = tabSvg.replace ('-3','-6') if s.shiftStem else tabSvg
-            ks = sorted (map (int, koppen.keys ()))                     # javascript compatibility
-            ks = [k2 % (k, k) if k > 9 else k1 % (k, k) for k in ks]
+            ks = sorted (koppen.keys ())                                # javascript compatibility
+            ks = [k2 % (k, k) if len (k) == 2 else k1 % (k, k) for k in ks]
             tbs = map (lambda x: x.strip () + '\n', tb.splitlines ())   # javascript compatibility
             s.outlist = tbs + ks + ['</defs>\n%%endsvg\n'] + s.outlist
 
@@ -1071,7 +1071,7 @@ class Parser:
             if stfdtl and int (stfdtl.get ('number', '1')) == n:
                 lines = stfdtl.findtext ('staff-lines')
                 if lines:
-                    cs += ' stafflines=%s' % lines
+                    cs += ' stafflines=%s' % (int (lines) * '|')
                     s.stafflines = int (lines)  # remember for tab staves
                 strings = stfdtl.findall ('staff-tuning')
                 if strings:
@@ -1188,6 +1188,7 @@ class Parser:
             if t != None and s.ped:
                 if not s.pedVce: s.pedVce = vs
                 startStop ('pedal', s.pedVce)
+            if dirtyp.findtext ('other-direction') == 'diatonic fretting': s.diafret = 1;
 
     def doHarmony (s, e, i, es):    # parse a musicXMl harmony tag
         _, vt, _ = s.findVoice (i, es)
@@ -1353,9 +1354,11 @@ class Parser:
                 part.append (locmap)
                 clef = s.clefMap.get (stf, 'treble')    # {xml staff number -> clef}
                 for i, iv in enumerate (locmap):
-                    nostem_attr = ''
-                    if clef.startswith ('tab') and nostem [i] and 'nostems' not in clef: nostem_attr = ' nostems'
-                    abcOut.clefs [iv] = clef + nostem_attr # add nostems when all notes of voice had no stem
+                    clef_attr = ''
+                    if clef.startswith ('tab'):
+                        if nostem [i] and 'nostems' not in clef: clef_attr = ' nostems'
+                        if s.diafret and 'diafret' not in clef: clef_attr += ' diafret' # for all voices in the part
+                    abcOut.clefs [iv] = clef + clef_attr # add nostems when all notes of voice had no stem
         s.gStfMap.append (part)
 
     def addMidiMap (s, ip, vvmap):      # map abc voices to midi settings
@@ -1373,9 +1376,11 @@ class Parser:
         xs.sort ()  # put abc voices in order
         s.midiMap.extend ([midi for v, midi in xs])
         snaarmap = ['E','G','B','d', 'f', 'a', "c'", "e'"]
+        diamap = '0,0,1,1,2,3,3,4,4,5,6+,6,7,7,8,8,9,10,10,11,11,12,13+,13,14'.split (',')
         for k in sorted (s.tabmap.keys ()): # add %%map's for all tab voices
             v, noot = k;
             snaar, fret = s.tabmap [k];
+            if s.diafret: fret = diamap [int (fret)]
             vabc = vvmap [v]
             snaar = s.stafflines - int (snaar)
             xs = s.tabVceMap.get (vabc, [])
@@ -1397,6 +1402,7 @@ class Parser:
             s.clefOct = {}      # xml staff number -> current clef-octave-change
             s.curClef = {}      # xml staff number -> current abc clef
             s.tabmap = {}       # (xml voice, abc note) -> (string, fret)
+            s.diafret = 0       # use diatonic fretting
             s.stafflines = 5
             s.msc.initVoices (newPart = 1)  # create all voices
             aantalHerhaald = 0  # keep track of number of repititions
@@ -1466,19 +1472,21 @@ if __name__ == '__main__':
     parser.add_option ("-s", action="store_true", help="shift node heads 3 units left in a tab staff")
     parser.add_option ("--v1", action="store_true", help="start-stop directions allways to first voice of staff")
     parser.add_option ("--noped", action="store_false", help="skip all pedal directions", dest='ped', default=True)
+    parser.add_option ("-i", action="store_true", help="read xml file from standard input")
     options, args = parser.parse_args ()
     if options.n < 0: parser.error ('only values >= 0')
     if options.b < 0: parser.error ('only values >= 0')
     if options.d and options.d not in [2**n for n in range (10)]:
         parser.error ('D should be on of %s' % ','.join ([str(2**n) for n in range (10)]))
     options.p = options.p and options.p.split (',') or [] # ==> [] | [string]
-    if len (args) == 0: parser.error ('no input file given')
+    if len (args) == 0 and not options.i: parser.error ('no input file given')
     pad = options.o
     if pad:
         if not os.path.exists (pad): os.mkdir (pad)
         if not os.path.isdir (pad): parser.error ('%s is not a directory' % pad)
     fnmext_list = []
     for i in args: fnmext_list += glob (i)
+    if options.i: fnmext_list = ['stdin.xml']
     if not fnmext_list: parser.error ('none of the input files exist')
     for X, fnmext in enumerate (fnmext_list):
         fnm, ext = os.path.splitext (fnmext)
@@ -1488,7 +1496,9 @@ if __name__ == '__main__':
         if os.path.isdir (fnmext):
             info ('skipped directory %s. Only files are accepted' % fnmext)
             continue
-        if ext.lower () == '.mxl':          # extract .xml file from .mxl file
+        if fnmext == 'stdin.xml':
+            fobj = sys.stdin
+        elif ext.lower () == '.mxl':        # extract .xml file from .mxl file
             z = ZipFile(fnmext)
             for n in z.namelist():          # assume there is always an xml file in a mxl archive !!
                 if (n[:4] != 'META') and (n[-4:].lower() == '.xml'):
