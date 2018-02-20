@@ -1071,7 +1071,8 @@ class Parser:
             if stfdtl and int (stfdtl.get ('number', '1')) == n:
                 lines = stfdtl.findtext ('staff-lines')
                 if lines:
-                    cs += ' stafflines=%s' % (int (lines) * '|')
+                    lns= '|||' if lines == '3' and sgn == 'TAB' else lines
+                    cs += ' stafflines=%s' % lns
                     s.stafflines = int (lines)  # remember for tab staves
                 strings = stfdtl.findall ('staff-tuning')
                 if strings:
@@ -1376,7 +1377,7 @@ class Parser:
         xs.sort ()  # put abc voices in order
         s.midiMap.extend ([midi for v, midi in xs])
         snaarmap = ['E','G','B','d', 'f', 'a', "c'", "e'"]
-        diamap = '0,0,1,1,2,3,3,4,4,5,6+,6,7,7,8,8,9,10,10,11,11,12,13+,13,14'.split (',')
+        diamap = '0,1-,1,1+,2,3,3,4,4,5,6,6+,7,8-,8,8+,9,10,10,11,11,12,13,13+,14'.split (',')
         for k in sorted (s.tabmap.keys ()): # add %%map's for all tab voices
             v, noot = k;
             snaar, fret = s.tabmap [k];
