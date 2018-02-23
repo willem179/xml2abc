@@ -905,8 +905,11 @@ class Parser:
         snaar_nw, fret_nw = ntrec.tab   # the computed/annotated allocation of nt
         for i in range (4):             # support same note on 4 strings
             na = s.note_alts [i % 3] [p]    # get alternative representation of same note
-            if '/' in na or i == 3: oct = 9 # emergency notation for 4th string case
-            nt = addoct (na, oct)
+            o = oct
+            if na in ['^B', '^^B']: o -= 1  # because in adjacent octave
+            if na in ['_C', '__C']: o += 1
+            if '/' in na or i == 3: o = 9   # emergency notation for 4th string case
+            nt = addoct (na, o)
             snaar, fret = s.tabmap.get ((v, nt), ('', ''))  # the current allocation of nt
             if not snaar: break             # note not yet allocated
             if snaar_nw == snaar: return nt # use present allocation
