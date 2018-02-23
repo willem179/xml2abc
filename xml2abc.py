@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 75
+VERSION = 76
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -809,6 +809,11 @@ def addoct (ptc, o):    # xml staff step, xml octave number
 # parser
 #----------------
 class Parser:
+    note_alts = [   # 3 alternative notations of the same note for tablature mapping
+        [x.strip () for x in 'C,   ^C,  D, ^D,  E,  F, ^F,  G, ^G,  A, ^A,  B'.split (',')],
+        [x.strip () for x in '^B,  _D,^^C, _E, _F, ^E, _G,^^F, _A,^^G, _B, _C'.split (',')],
+        [x.strip () for x in '__D,^^B,__E,__F,^^D,__G,^^E,__A,_/A,__B,__C,^^A'.split (',')] ]
+    step_map = {'C':0,'D':2,'E':4,'F':5,'G':7,'A':9,'B':11}
     def __init__ (s, options):
         # unfold repeats, number of chars per line, credit filter level, volta option
         s.slurBuf = {}    # dict of open slurs keyed by slur number
@@ -893,24 +898,22 @@ class Parser:
             elif glis.get ('type') == 'stop': note.before = ['!%s)!' % lt] + note.before
 
     def tabnote (s, alt, ptc, oct, v, ntrec):
-        alt = int (alt or '0')
-        snaar_nw, fret_nw = ntrec.tab
-        nt = ['__','_','','^','^^'][alt+2] + addoct (ptc, oct)
-        snaar, fret = s.tabmap.get ((v, nt), ('', ''))
-        if snaar and snaar_nw != snaar: # same note on different string
-            ns = 'ABCDEFGA'
-            if alt != 1:
-                ptc = ns [ns.find (ptc) - 1]
-                alt = alt + 2
-            else:
-                ptc = ns [ns.find (ptc) + 1]
-                alt = alt - 2
-            nt_new = ['__','_','','^','^^'][alt+2] + addoct (ptc, oct)
-            snaar2, fret2 = s.tabmap.get ((v, nt_new), ('', ''))
-            if snaar2 and snaar2 != snaar_nw:
-                fmt = 'overwritten: voice %d, note: %3s, string %s, fret: %2s by string: %s, fret %s'
-                info (fmt % (v, nt_new, snaar2, fret2, snaar_nw, fret_nw), 1)
-            nt = nt_new
+        p = s.step_map [ptc] + int (alt or '0') # p in -2 .. 13
+        if p > 11: oct += 1             # octave correction
+        if p < 0: oct -= 1
+        p = p % 12                      # remap p into 0..11
+        snaar_nw, fret_nw = ntrec.tab   # the computed/annotated allocation of nt
+        for i in range (4):             # support same note on 4 strings
+            na = s.note_alts [i % 3] [p]    # get alternative representation of same note
+            if '/' in na or i == 3: oct = 9 # emergency notation for 4th string case
+            nt = addoct (na, oct)
+            snaar, fret = s.tabmap.get ((v, nt), ('', ''))  # the current allocation of nt
+            if not snaar: break             # note not yet allocated
+            if snaar_nw == snaar: return nt # use present allocation
+            if i == 3:                  # new allocaion needed but none is free
+                fmt = 'rejected: voice %d note %3s string %s fret %2s remains: string %s fret %s'
+                info (fmt % (v, nt, snaar_nw, fret_nw, snaar, fret), 1)
+                ntrec.tab = (snaar, fret)
         s.tabmap [v, nt] = ntrec.tab    # for tablature map (voice, note) -> (string, fret)
         return nt                       # ABC code always in key C (with midi pitch alterations)
 
