@@ -399,6 +399,7 @@ class ABCoutput:
             if vnum in vmpdct:
                 hd.append ('%%%%voicemap tab%d\n' % vnum)
                 hd.append ('K:none\nM:none\n%%clef none\n%%staffscale 1.6\n%%flatbeams true\n%%stemdir down\n')
+            if 'perc' in clef: hd.append ('K:none\n');  # no key for a perc voice
             if s.volpan > 1:    # option -m 2 -> output all recognized midi commands when needed and present in xml
                 if ch > 0 and ch != vnum: hd.append ('%%%%MIDI channel %d\n' % ch)
                 if prg > 0:  hd.append ('%%%%MIDI program %d\n' % (prg - 1))
