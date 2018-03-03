@@ -76,17 +76,17 @@ percSvg = '''%%beginsvg
     <text id="normal" x="-3.7" y="0">&#xe0a3;</text>
     <text id="normal-" x="-3.7" y="0">&#xe0a3;</text>
     <text id="normal+" x="-3.7" y="0">&#xe0a4;</text>
-    <g id="circle-x"><text x="-3" y="0">&#xe263;</text><circle r="4" class="stroke"/></g>
-    <g id="circle-x-"><text x="-3" y="0">&#xe263;</text><circle r="4" class="stroke"/></g>
-    <path id="triangle" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="stroke-width:1.4"/>
-    <path id="triangle-" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="stroke-width:1.4"/>
-    <path id="triangle+" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="fill:#000"/>
-    <path id="square" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="stroke-width:1.4"/>
-    <path id="square-" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="stroke-width:1.4"/>
-    <path id="square+" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="fill:#000"/>
-    <path id="diamond" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="stroke-width:1.4"/>
-    <path id="diamond-" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="stroke-width:1.4"/>
-    <path id="diamond+" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="fill:#000"/>
+    <g id="circle-x"><text x="-3" y="0">&#xe263;</text><circle r="4" class="stroke"></circle></g>
+    <g id="circle-x-"><text x="-3" y="0">&#xe263;</text><circle r="4" class="stroke"></circle></g>
+    <path id="triangle" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="stroke-width:1.4"></path>
+    <path id="triangle-" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="stroke-width:1.4"></path>
+    <path id="triangle+" d="m-4 -3.2l4 6.4 4 -6.4z" class="stroke" style="fill:#000"></path>
+    <path id="square" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="stroke-width:1.4"></path>
+    <path id="square-" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="stroke-width:1.4"></path>
+    <path id="square+" d="m-3.5 3l0 -6.2 7.2 0 0 6.2z" class="stroke" style="fill:#000"></path>
+    <path id="diamond" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="stroke-width:1.4"></path>
+    <path id="diamond-" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="stroke-width:1.4"></path>
+    <path id="diamond+" d="m0 -3l4.2 3.2 -4.2 3.2 -4.2 -3.2z" class="stroke" style="fill:#000"></path>
     </defs>
     %%endsvg'''
 
@@ -95,11 +95,11 @@ tabSvg = '''%%beginsvg
     .bf {font-family:sans-serif; font-size:7px}
     </style>
     <defs>
-    <rect id="clr" x="-3" y="-1" width="6" height="5" fill="white"/>
-    <rect id="clr2" x="-3" y="-1" width="11" height="5" fill="white"/>'''
+    <rect id="clr" x="-3" y="-1" width="6" height="5" fill="white"></rect>
+    <rect id="clr2" x="-3" y="-1" width="11" height="5" fill="white"></rect>'''
 
-kopSvg = '<g id="kop%s" class="bf"><use xlink:href="#clr"/><text x="-2" y="3">%s</text></g>\n'
-kopSvg2 = '<g id="kop%s" class="bf"><use xlink:href="#clr2"/><text x="-2" y="3">%s</text></g>\n'
+kopSvg = '<g id="kop%s" class="bf"><use xlink:href="#clr"></use><text x="-2" y="3">%s</text></g>\n'
+kopSvg2 = '<g id="kop%s" class="bf"><use xlink:href="#clr2"></use><text x="-2" y="3">%s</text></g>\n'
 
 def info (s, warn=1): sys.stderr.write ((warn and '-- ' or '') + s + '\n')
 
