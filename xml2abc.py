@@ -1257,7 +1257,7 @@ class Parser:
                 pan = float (x[3])
                 if pan >= -90 and pan <= 90:    # would be better to map behind-pannings
                     pan = (float (x[3]) + 90) / 180 * 127   # xml between -90 and +90
-                midi [m.get ('id')] = [int (x[0]), int (x[1]), float (x[2]), pan]
+                midi [m.get ('id')] = [int (x[0]), int (x[1]), float (x[2]) * 1.27, pan]    # volume 100 -> midi 127
                 up = m.findtext ('midi-unpitched')
                 if up: s.drumInst [m.get ('id')] = int (up) - 1 # store midi-pitch for channel 10 notes
             s.instMid.append (midi)
