@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 76
+VERSION = 77
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -911,6 +911,13 @@ class Parser:
             if na in ['_C', '__C']: o += 1
             if '/' in na or i == 3: o = 9   # emergency notation for 4th string case
             nt = addoct (na, o)
+            nb = nt.replace ('^','').replace ('_','')
+            if na in s.step_map:
+                if (nb, v) in s.curalts:
+                    del s.curalts [nb, v]
+                    nt = '=' + nt
+            else:
+                s.curalts [nb, v] = 1
             snaar, fret = s.tabmap.get ((v, nt), ('', ''))  # the current allocation of nt
             if not snaar: break             # note not yet allocated
             if snaar_nw == snaar: return nt # use present allocation
