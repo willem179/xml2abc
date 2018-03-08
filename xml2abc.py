@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 76
+VERSION = 77
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -811,7 +811,7 @@ def addoct (ptc, o):    # xml staff step, xml octave number
 #----------------
 class Parser:
     note_alts = [   # 3 alternative notations of the same note for tablature mapping
-        [x.strip () for x in 'C,   ^C,  D, ^D,  E,  F, ^F,  G, ^G,  A, ^A,  B'.split (',')],
+        [x.strip () for x in '=C,  ^C, =D, ^D, =E, =F, ^F, =G, ^G, =A, ^A, =B'.split (',')],
         [x.strip () for x in '^B,  _D,^^C, _E, _F, ^E, _G,^^F, _A,^^G, _B, _C'.split (',')],
         [x.strip () for x in '__D,^^B,__E,__F,^^D,__G,^^E,__A,_/A,__B,__C,^^A'.split (',')] ]
     step_map = {'C':0,'D':2,'E':4,'F':5,'G':7,'A':9,'B':11}
