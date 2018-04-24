@@ -2,7 +2,8 @@
 # coding=latin-1
 '''
 Copyright (C) 2012: W.G. Vree
-Contributions: M. Tarenskeen, N. Liberg, Paul Villiger, Janus Meuris, Larry Myerscough
+Contributions: M. Tarenskeen, N. Liberg, Paul Villiger, Janus Meuris, Larry Myerscough, 
+Dick Jackson, Jan Wybren de Jong
 
 This program is free software; you can redistribute it and/or modify it under the terms of the
 GNU General Public License as published by the Free Software Foundation; either version 2 of
@@ -22,9 +23,11 @@ VERSION = 77
 python3 = sys.version_info.major > 2
 if python3:
     tupletype = tuple
+    listtype = list
     max_int = sys.maxsize
 else:
     tupletype = types.TupleType
+    listtype = types.ListType
     max_int = sys.maxint
 
 note_ornamentation_map = {        # for notations/, modified from EasyABC
@@ -594,7 +597,7 @@ def outVoice (measure, divs, im, ip, unitL):    # note/elem objects of one measu
             s += nx.after
             nospace = nx.beam
         else:
-            if isinstance (nx.str, types.ListType): nx.str = nx.str [0]
+            if isinstance (nx.str, listtype): nx.str = nx.str [0]
             s = nx.str
             nospace = 1
         if nospace: vs.append (s)
