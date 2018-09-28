@@ -18,7 +18,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 77
+VERSION = 78
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -506,12 +506,11 @@ def staffStep (ptc, o, clef, tstep):
     return ptc
 
 def setKey (fifths, mode):
+    sharpness = ['Fb', 'Cb','Gb','Db','Ab','Eb','Bb','F','C','G','D','A', 'E', 'B', 'F#','C#','G#','D#','A#','E#','B#']
+    offTab = {'maj':8, 'ion':8, 'm':11, 'min':11, 'aeo':11, 'mix':9, 'dor':10, 'phr':12, 'lyd':7, 'loc':13, 'non':8}
+    mode = mode.lower ()[:3] # only first three chars, no case
+    key = sharpness [offTab [mode] + fifths] + (mode if offTab [mode] != 8 else '')
     accs = ['F','C','G','D','A','E','B']
-    kmaj = ['Cb','Gb','Db','Ab','Eb','Bb','F','C','G','D','A', 'E', 'B', 'F#','C#']
-    kmin = ['Ab','Eb','Bb','F', 'C', 'G', 'D','A','E','B','F#','C#','G#','D#','A#']
-    key = ''
-    if mode == 'major': key = kmaj [7 + fifths]
-    if mode == 'minor': key = kmin [7 + fifths] + 'min'
     if fifths >= 0: msralts = dict (zip (accs[:fifths], fifths * [1]))
     else:           msralts = dict (zip (accs[fifths:], -fifths * [-1]))
     return key, msralts
