@@ -3,7 +3,7 @@
 '''
 Copyright (C) 2012: W.G. Vree
 Contributions: M. Tarenskeen, N. Liberg, Paul Villiger, Janus Meuris, Larry Myerscough, 
-Dick Jackson, Jan Wybren de Jong
+Dick Jackson, Jan Wybren de Jong, Mark Zealey.
 
 This program is free software; you can redistribute it and/or modify it under the terms of the
 GNU General Public License as published by the Free Software Foundation; either version 2 of
@@ -18,7 +18,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 78
+VERSION = 79
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -185,6 +185,7 @@ class Music:
 
     def incTime (s, dt):
         s.tijd += dt
+        if s.tijd < 0: s.tijd = 0   # erroneous <backup> element
         if s.tijd > s.maxtime: s.maxtime = s.tijd
 
     def appendElemCv (s, voices, elem):
@@ -280,7 +281,7 @@ class Music:
         vvmap = {}                  # xml voice number -> abc voice number (one part)
         vnum_keys = list (s.vnums.keys ())
         if s.jscript or isSib: vnum_keys.sort ()
-        lvc = min (vnum_keys)       # lowest xml voice number of this part
+        lvc = min (vnum_keys or [1])	# lowest xml voice number of this part
         for iv in vnum_keys:
             if s.cnt.getv ('note', iv) == 0:    # no real notes counted in this voice
                 continue            # skip empty voices
@@ -340,6 +341,7 @@ class ABCoutput:
         s.clefs = {}            # clefs for all abc-voices
         s.mtr = 'none'
         s.tempo = 0             # 0 -> no tempo field
+        s.tempo_units = (1,4)	# note type of tempo direction
         s.pad = pad             # the output path or none
         s.X = X + 1             # the abc tune number
         s.denL = options.d      # denominator of the unit length (L:) from -d option
@@ -382,7 +384,7 @@ class ABCoutput:
             if s.jscript and k in ['pageheight','topmargin', 'botmargin']: continue
             if s.pageFmt [k] != None: hd.append ('%%%%%s %.2f%s\n' % (k, s.pageFmt [k], i > 0 and 'cm' or ''))
         if staves and len (accStf) > 1: hd.append ('%%score ' + staves + '\n')
-        tempo = s.tempo and 'Q:1/4=%s\n' % s.tempo or ''    # default no tempo field
+        tempo = s.tempo and 'Q:%d/%d=%s\n' % (s.tempo_units [0], s.tempo_units [1], s.tempo) or ''  # default no tempo field
         d = {}  # determine the most frequently occurring unit length over all voices
         for x in s.cmpL: d[x] = d.get (x, 0) + 1
         if s.jscript:   defLs = sorted (d.items (), key=lambda x: (-x[1], x[0])) # when tie (1) sort on key (0)
@@ -516,7 +518,7 @@ def setKey (fifths, mode):
     return key, msralts
 
 def insTup (ix, notes, fact):   # read one nested tuplet
-    tupcnt, halted = 0, 0
+    tupcnt = 0
     nx = notes [ix]
     if 'start' in nx.tup:
         nx.tup.remove ('start') # do recursive calls when starts remain
@@ -536,11 +538,9 @@ def insTup (ix, notes, fact):   # read one nested tuplet
             tupcnt += 1         # count tuplet elements
         if 'stop' in nx.tup:
             nx.tup.remove ('stop')
-            halted = 1
             break
         if not nx.fact:         # stop on first non tuplet note
             ix = lastix         # back to last tuplet note
-            halted = 1
             break
         lastix = ix
         ix += 1
@@ -574,7 +574,7 @@ def outVoice (measure, divs, im, ip, unitL):    # note/elem objects of one measu
     ix = 0
     while ix < len (measure):   # set all (nested) tuplet annotations
         nx = measure [ix]
-        if isinstance (nx, Note) and nx.fact:
+        if isinstance (nx, Note) and nx.fact and not nx.grace:
             ix, tupcnt = insTup (ix, measure, (1, 1))   # read one tuplet, insert annotation(s)
         ix += 1 
     vs = []
@@ -939,7 +939,7 @@ class Parser:
         elif acc != None:
             alt = acc2alt [acc]      # acc takes precedence over the pitch here!
         else:   # now see if we really must add an accidental
-            alt = int (alt)
+            alt = int (float (alt))
             if (p, v) in s.curalts:  # the note in this voice has been altered before
                 if alt == s.curalts [(p, v)]: return p      # alteration still the same
             elif alt == s.msralts.get (ptc, 0): return p    # alteration implied by the key
@@ -1150,6 +1150,7 @@ class Parser:
                     x = ''                          # delay code generation until opening found
             else: raise ValueError ('wrong direction type')
             addDirection (x, vs, None, stfnum)
+        tempo, wrdstxt = None, ''
         plcmnt = e.get ('placement')
         stf, vs, v1 = s.findVoice (i, es)
         jmp = ''    # for jump sound elements: dacapo, dalsegno and family
@@ -1166,30 +1167,37 @@ class Parser:
                 if inst and abcOut.volpan > 0: s.msc.appendElem (vs, '[I:MIDI= %s %s]' % (parm, inst))
             tempo = t.get ('tempo') # look for tempo attribute
             if tempo:
-                if '.' in tempo: tempo = '%.2f' % float (tempo) # hope it is a number and insert in voice 1
-                else:            tempo = '%d' % int (tempo)
-                if s.msc.tijd == 0 and s.msr.ixm == 0: abcOut.tempo = tempo   # first measure -> header
-                else: s.msc.appendElem (v1, '[Q:1/4=%s]' % tempo)   # otherwise -> first voice
+                tempo = '%.0f' % float (tempo) # hope it is a number and insert in voice 1
+                tempo_units = (1,4) # always 1/4 for sound elements!
             for r, v in jmps:
                 if t.get (r, ''): jmp = v; break
         dirtyp = e.find ('direction-type')
         if dirtyp != None:
+            units = { 'whole': (1,1), 'half': (1,2), 'quarter': (1,4), 'eighth': (1,8) }
+            metr = dirtyp.find ('metronome')
+            if metr != None:
+                t = metr.findtext ('beat-unit', '')
+                if t in units:  tempo_units = units [t]
+                else:           tempo_units = units ['quarter']
+                if metr.find ('beat-unit-dot') != None:
+                    tempo_units = simplify (tempo_units [0] * 3, tempo_units [1] * 2)
+                tempo = metr.findtext ('per-minute')    # overwrites the value set by the sound element of this direction
             t = dirtyp.find ('wedge')
             if t != None: startStop ('wedge', vs)
-            wrds = dirtyp.find ('words')        # insert text annotations
-            if wrds == None: wrds = dirtyp.find ('rehearsal')   # treat rehearsal mark as text annotation
-            if wrds != None:
+            allwrds = dirtyp.findall ('words')        # insert text annotations
+            if not allwrds: allwrds = dirtyp.findall ('rehearsal')   # treat rehearsal mark as text annotation
+            wrdstxt = ''
+            for wrds in allwrds:
                 if jmp: # ignore the words when a jump sound element is present in this direction
-                    s.msc.appendElem (vs, '!%s!' % jmp , 1) # to first voice
-                else:
-                    plc = plcmnt == 'below' and '_' or '^'
-                    if float (wrds.get ('default-y', '0')) < 0: plc = '_'
-                    txt = (wrds.text or '').replace ('"','\\"').replace ('\n', ' ')
-                    if s.jscript: txt = txt.strip ()
-                    if txt: s.msc.appendElem (vs, '"%s%s"' % (plc, txt), 1) # to first voice
+                    s.msc.appendElem (vs, '!%s!' % jmp , 1) # to voice
+                    break
+                plc = plcmnt == 'below' and '_' or '^'
+                if float (wrds.get ('default-y', '0')) < 0: plc = '_'
+                wrdstxt += (wrds.text or '').replace ('"','\\"').replace ('\n', '\\n')
+            if s.jscript: wrdstxt = wrdstxt.strip ()
             for key, val in dynamics_map.items ():
                 if dirtyp.find ('dynamics/' + key) != None:
-                    s.msc.appendElem (vs, val, 1)   # to first voice
+                    s.msc.appendElem (vs, val, 1)   # to voice
             if dirtyp.find ('coda') != None: s.msc.appendElem (vs, 'O', 1)
             if dirtyp.find ('segno') != None: s.msc.appendElem (vs, 'S', 1)
             t = dirtyp.find ('octave-shift')
@@ -1199,6 +1207,14 @@ class Parser:
                 if not s.pedVce: s.pedVce = vs
                 startStop ('pedal', s.pedVce)
             if dirtyp.findtext ('other-direction') == 'diatonic fretting': s.diafret = 1;
+        if tempo:
+            tempo = '%.0f' % float (tempo) # hope it is a number and insert in voice 1
+            if s.msc.tijd == 0 and s.msr.ixm == 0:      # first measure -> header
+                abcOut.tempo = tempo
+                abcOut.tempo_units = tempo_units
+            else:
+                s.msc.appendElem (v1, '[Q:%d/%d=%s]' % (tempo_units [0], tempo_units [1], tempo))   # otherwise -> 1st voice
+        if wrdstxt: s.msc.appendElem (vs, '"%s%s"' % (plc, wrdstxt), 1) # to voice, but after tempo
 
     def doHarmony (s, e, i, es):    # parse a musicXMl harmony tag
         _, vt, _ = s.findVoice (i, es)
@@ -1500,7 +1516,7 @@ if __name__ == '__main__':
     if not fnmext_list: parser.error ('none of the input files exist')
     for X, fnmext in enumerate (fnmext_list):
         fnm, ext = os.path.splitext (fnmext)
-        if ext.lower () not in ('.xml','.mxl'):
+        if ext.lower () not in ('.xml','.mxl','.musicxml'):
             info ('skipped input file %s, it should have extension .xml or .mxl' % fnmext)
             continue
         if os.path.isdir (fnmext):
