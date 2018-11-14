@@ -18,7 +18,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 80
+VERSION = 81
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -1170,8 +1170,8 @@ class Parser:
                 tempo_units = (1,4) # always 1/4 for sound elements!
             for r, v in jmps:
                 if t.get (r, ''): jmp = v; break
-        dirtyp = e.find ('direction-type')
-        if dirtyp != None:
+        dirtypes = e.findall ('direction-type')
+        for dirtyp in dirtypes:
             units = { 'whole': (1,1), 'half': (1,2), 'quarter': (1,4), 'eighth': (1,8) }
             metr = dirtyp.find ('metronome')
             if metr != None:
@@ -1192,7 +1192,7 @@ class Parser:
                 plc = plcmnt == 'below' and '_' or '^'
                 if float (wrds.get ('default-y', '0')) < 0: plc = '_'
                 wrdstxt += (wrds.text or '').replace ('"','\\"').replace ('\n', '\\n')
-            if s.jscript: wrdstxt = wrdstxt.strip ()
+            wrdstxt = wrdstxt.strip ()
             for key, val in dynamics_map.items ():
                 if dirtyp.find ('dynamics/' + key) != None:
                     s.msc.appendElem (vs, val, 1)   # to voice
