@@ -18,7 +18,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 79
+VERSION = 80
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -976,10 +976,9 @@ class Parser:
             s.ingrace = 0
             s.msc.lastnote.after += '}' # close grace on lastenote.after
         if dur == None or note.grace: dur = 0
-        if r == None and n.get ('print-object') == 'no': # not a rest and not visible
-            if not chord: s.msc.incTime (int (dur))      # still increment the time !!
-            s.msc.cnt.inc ('nopr', v)   # count skipped notes
-            return                      # skip non printable notes
+        if r == None and n.get ('print-object') == 'no':
+            if chord: return
+            r = 1  # turn invisible notes (that advance the time) into invisible rests
         note.dur = int (dur)
         if r == None and (not p or not o):  # not a rest and no pitch
             s.msc.cnt.inc ('nopt', v)       # count unpitched notes
@@ -987,7 +986,7 @@ class Parser:
         isTab = s.curClef and s.curClef.get (s.curStf [v], '').startswith ('tab')
         nttn = n.find ('notations')     # add ornaments
         if nttn != None: s.doNotations (note, nttn, isTab)
-        e = n.find ('stem')
+        e = n.find ('stem') if r == None else None  # no !stemless! before rest
         if e != None and e.text == 'none' and (not isTab or v in s.hasStems or s.tstep):
             note.before += ['s']; abcOut.stemless = 1;
         e = n.find ('accidental')
@@ -1186,7 +1185,6 @@ class Parser:
             if t != None: startStop ('wedge', vs)
             allwrds = dirtyp.findall ('words')        # insert text annotations
             if not allwrds: allwrds = dirtyp.findall ('rehearsal')   # treat rehearsal mark as text annotation
-            wrdstxt = ''
             for wrds in allwrds:
                 if jmp: # ignore the words when a jump sound element is present in this direction
                     s.msc.appendElem (vs, '!%s!' % jmp , 1) # to voice
