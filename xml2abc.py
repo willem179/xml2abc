@@ -18,7 +18,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 81
+VERSION = 82
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -1064,6 +1064,7 @@ class Parser:
                     else:
                         mid_str = ""            # overwrite repeat with final string
                     s.repeat_str [n][0] = '[I:repeat %s%d]' % (mid_str, repeat_count)
+                    del s.repeat_str [n]        # remove closed repeats
         toct = e.findtext ('transpose/octave-change', '')
         if toct: steps += 12 * int (toct)       # extra transposition of toct octaves
         for clef in e.findall ('clef'):         # a part can have multiple staves
@@ -1464,6 +1465,8 @@ class Parser:
                         aantalHerhaald = 0  # reset
                         s.msr.ixm += 1      # just continue
                 else: s.msr.ixm += 1        # on to the next measure
+            for rv in s.repeat_str.values ():   # close hanging measure-repeats without stop
+                rv [0] = '[I:repeat %s %d]' % (rv [1], 1)
             vvmap = s.msc.outVoices (s.msr.divs, ip, s.isSib)
             s.addStaffMap (vvmap)           # update global staff map
             s.addMidiMap (ip, vvmap)
