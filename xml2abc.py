@@ -18,7 +18,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 83
+VERSION = 84
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -215,8 +215,8 @@ class Music:
     def appendNote (s, v, note, noot):
         note.ns.append (note.ntdec + noot)
         s.appendObj (v, note, int (note.dur))
+        s.lastnote = note           # remember last note/rest for later modifications (chord, grace)
         if noot != 'z' and noot != 'x':         # real notes and grace notes
-            s.lastnote = note       # remember last note for later modifications (chord, grace)
             s.cnt.inc ('note', v)   # count number of real notes in each voice
             if not note.grace:                  # for every real note
                 s.lyrics[v].append (note.lyrs)  # even when it has no lyrics
