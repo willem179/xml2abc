@@ -18,7 +18,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 82
+VERSION = 83
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -353,7 +353,7 @@ class ABCoutput:
         s.shiftStem = options.s # shift note heads 3 units left
         if pad:
             _, base_name = os.path.split (fnmext)
-            s.outfile = open (os.path.join (pad, base_name), 'wb') # the ABC output file, binary: we do the encoding ourselves
+            s.outfile = open (os.path.join (pad, base_name), 'w')
         else:   s.outfile = sys.stdout
         if s.jscript: s.X = 1   # always X:1 in javascript version
         s.pageFmt = {}
@@ -434,11 +434,8 @@ class ABCoutput:
     def writeall (s):  # determine the required encoding of the entire ABC output
         str = ''.join (s.outlist)
         if s.dojef: str = perc2map (str)
-        if s.jscript:
-            s.outfile.write (str.encode ('utf-8'))  # always utf-8 in javascript version
-        else:
-            try:    s.outfile.write (str.encode ('latin-1'))    # prefer latin-1
-            except: s.outfile.write (str.encode ('utf-8'))      # fall back to utf if really needed
+        if python3: s.outfile.write (str)
+        else:       s.outfile.write (str.encode ('utf-8'))
         if s.pad: s.outfile.close ()                # close each file with -o option
         else: s.outfile.write ('\n')                # add empty line between tunes on stdout
         info ('%s written with %d voices' % (s.fnmext, len (s.clefs)), warn=0)
@@ -840,8 +837,7 @@ class Parser:
         s.curStf = {}     # xml voice number -> current xml staff number
         s.nolbrk = options.x;   # generate no linebreaks ($)
         s.jscript = options.j   # compatibility with javascript version
-        s.ornaments = note_ornamentation_map.items ()
-        if s.jscript: s.ornaments.sort ()
+        s.ornaments = sorted (note_ornamentation_map.items ())
         s.doPageFmt = len (options.p) == 1 # translate xml page format
         s.tstep = options.t     # clef determines step on staff (percussion)
         s.dirtov1 = options.v1  # all directions to first voice of staff
