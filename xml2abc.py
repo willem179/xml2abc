@@ -18,7 +18,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 84
+VERSION = 85
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -1098,7 +1098,8 @@ class Parser:
 
     def findVoice (s, i, es):
         stfnum = int (es[i].findtext ('staff',1))   # directions belong to a staff
-        v1 = s.stfMap [stfnum][0]                   # directions to first voice of staff
+        vs = s.stfMap [stfnum]                      # voices in this staff
+        v1 = vs [0] if vs else 1                    # directions to first voice of staff
         if s.dirtov1: return stfnum, v1, v1         # option --v1
         for e in es [i+1:]:                         # or to the voice if the next note
             if e.tag == 'note':
@@ -1341,12 +1342,14 @@ class Parser:
         s.vceInst = {}          # {voice -> instrument id} for this part
         s.msc.vnums = {}        # voice id's
         s.hasStems = {}         # XML voice nums with at least one note with a stem (for tab key)
+        s.stfMap, s.clefMap = {}, {}    # staff -> [voices], staff -> clef
         ns = part.findall ('measure/note')
         for n in ns:            # count staff allocations for all notes
             v = int (n.findtext ('voice', '1'))
             if s.isSib: v += 100 * int (n.findtext ('staff', '1'))  # repair bug in Sibelius
             s.msc.vnums [v] = 1 # collect all used voice id's in this part
             sn = int (n.findtext ('staff', '1'))
+            s.stfMap [sn] = []
             if v not in vmap:
                 vmap [v] = {sn:1}
             else:
@@ -1356,14 +1359,13 @@ class Parser:
             if x != None: s.vceInst [v] = x.get ('id')
             x, noRest = n.findtext ('stem'), n.find ('rest') == None
             if noRest and (not x or x != 'none'): s.hasStems [v] = 1    # XML voice v has at least one stem
-        s.stfMap, s.clefMap = {}, {}    # staff -> [voices], staff -> clef
         vks = list (vmap.keys ())
         if s.jscript or s.isSib: vks.sort ()
         for v in vks:           # choose staff with most allocations for each voice
             xs = [(n, sn) for sn, n in vmap[v].items ()]
             xs.sort ()
             stf = xs[-1][1]     # the winner: staff with most notes of voice v
-            s.stfMap[stf] = s.stfMap.get (stf, []) + [v]
+            s.stfMap [stf].append (v)
             s.curStf [v] = stf  # current staff of XML voice v
 
     def addStaffMap (s, vvmap): # vvmap: xml voice number -> global abc voice number
