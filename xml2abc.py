@@ -18,7 +18,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 85
+VERSION = 86
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -1178,7 +1178,8 @@ class Parser:
                 else:           tempo_units = units ['quarter']
                 if metr.find ('beat-unit-dot') != None:
                     tempo_units = simplify (tempo_units [0] * 3, tempo_units [1] * 2)
-                tempo = metr.findtext ('per-minute')    # overwrites the value set by the sound element of this direction
+                tmpro = re.search ('[.\d]+', metr.findtext ('per-minute'))  # look for a number
+                if tmpro: tempo = tmpro.group () # overwrites the value set by the sound element of this direction
             t = dirtyp.find ('wedge')
             if t != None: startStop ('wedge', vs)
             allwrds = dirtyp.findall ('words')        # insert text annotations
