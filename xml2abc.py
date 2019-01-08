@@ -18,7 +18,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 86
+VERSION = 87
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -608,8 +608,11 @@ def sortMeasure (voice, m):
     voice.sort (key=lambda o: o.tijd)   # sort on time
     time = 0
     v = []
-    for nx in voice:    # establish sequentiality
-        if nx.tijd > time: v.append (Note (nx.tijd - time, 'x')) # fill hole
+    rs = []                            # holds rests in between notes
+    for i, nx in enumerate (voice):    # establish sequentiality
+        if nx.tijd > time:             # fill hole with invisble rest
+            v.append (Note (nx.tijd - time, 'x'))
+            rs.append (len (v) - 1)
         if isinstance (nx, Elem):
             if nx.tijd < time: nx.tijd = time # shift elems without duration to where they fit
             v.append (nx)
@@ -632,6 +635,13 @@ def sortMeasure (voice, m):
                 info ('overlapping notes in one voice! part %d, measure %d, note %s discarded' % (m.ixp+1, m.ixm+1, isinstance (nx, Note) and nx.ns or nx.str))
                 continue
         v.append (nx)
+        if isinstance (nx, Note):
+            if nx.ns [0] in 'zx':
+                rs.append (len (v) - 1)     # remember rests between notes
+            elif len (rs):
+                if nx.beam and not nx.grace:    # copy beam into rests
+                    for j in rs: v[j].beam = nx.beam
+                rs = []                     # clear rests on each note
         time = nx.tijd + nx.dur
     #   when a measure contains no elements and no forwards -> no incTime -> s.maxtime = 0 -> right barline
     #   is inserted at time == 0 (in addbar) and is only element in the voice when sortMeasure is called
@@ -831,6 +841,7 @@ class Parser:
         s.msralts = {}    # xml-notenames (without octave) with accidentals from the key
         s.curalts = {}    # abc-notenames (with voice number) with passing accidentals
         s.stfMap = {}     # xml staff number -> [xml voice number]
+        s.vce2stf = {}    # xml voice number -> allocated staff number
         s.clefMap = {}    # xml staff number -> abc clef (for header only)
         s.curClef = {}    # xml staff number -> current abc clef
         s.clefOct = {}    # xml staff number -> current clef-octave-change
@@ -1101,11 +1112,11 @@ class Parser:
         vs = s.stfMap [stfnum]                      # voices in this staff
         v1 = vs [0] if vs else 1                    # directions to first voice of staff
         if s.dirtov1: return stfnum, v1, v1         # option --v1
-        for e in es [i+1:]:                         # or to the voice if the next note
+        for e in es [i+1:]:                         # or to the voice of the next note
             if e.tag == 'note':
-                stf = int (e.findtext ('staff', '1'))
                 v = int (e.findtext ('voice', '1'))
                 if s.isSib: v += 100 * int (e.findtext ('staff', '1'))  # repair bug in Sibelius
+                stf = s.vce2stf [v]                 # use our own staff allocation
                 return stf, v, v1                   # voice of next note, first voice of staff
             if e.tag == 'backup': break
         return stfnum, v1, v1                       # no note found, fall back to v1
@@ -1367,6 +1378,7 @@ class Parser:
             xs.sort ()
             stf = xs[-1][1]     # the winner: staff with most notes of voice v
             s.stfMap [stf].append (v)
+            s.vce2stf [v] = stf # reverse map
             s.curStf [v] = stf  # current staff of XML voice v
 
     def addStaffMap (s, vvmap): # vvmap: xml voice number -> global abc voice number
