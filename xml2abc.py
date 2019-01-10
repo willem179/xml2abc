@@ -844,6 +844,7 @@ class Parser:
         s.vce2stf = {}    # xml voice number -> allocated staff number
         s.clefMap = {}    # xml staff number -> abc clef (for header only)
         s.curClef = {}    # xml staff number -> current abc clef
+        s.stemDir = {}    # xml voice number -> current stem direction
         s.clefOct = {}    # xml staff number -> current clef-octave-change
         s.curStf = {}     # xml voice number -> current xml staff number
         s.nolbrk = options.x;   # generate no linebreaks ($)
@@ -853,6 +854,7 @@ class Parser:
         s.tstep = options.t     # clef determines step on staff (percussion)
         s.dirtov1 = options.v1  # all directions to first voice of staff
         s.ped = options.ped     # render pedal directions
+        s.wstems = options.stm  # translate stem elements
         s.pedVce = None   # voice for pedal directions
         s.repeat_str = {} # staff number -> [measure number, repeat-text]
         s.tabVceMap = {}  # abc voice num -> [%%map ...] for tab voices
@@ -1022,6 +1024,11 @@ class Parser:
             if lyrnum == 0: lyrnum = lyrlast + 1                # and correct Sibelius bugs
             else: lyrlast = lyrnum
             note.lyrs [lyrnum] = doSyllable (e)
+        stemdir = n.findtext ('stem')
+        if s.wstems and (stemdir == 'up' or stemdir == 'down'):
+            if stemdir != s.stemDir.get (v, ''):
+                s.stemDir [v] = stemdir
+                s.msc.appendElem (v, '[I:stemdir %s]' % stemdir)
         if chord: s.msc.addChord (note, noot)
         else:
             xmlstaff = int (n.findtext ('staff', '1'))
@@ -1437,6 +1444,7 @@ class Parser:
             s.drumNotes = {}    # (xml voice, abc note) -> (midi note, note head)
             s.clefOct = {}      # xml staff number -> current clef-octave-change
             s.curClef = {}      # xml staff number -> current abc clef
+            s.stemDir = {}      # xml voice number -> current stem direction
             s.tabmap = {}       # (xml voice, abc note) -> (string, fret)
             s.diafret = 0       # use diatonic fretting
             s.stafflines = 5
@@ -1494,7 +1502,9 @@ if __name__ == '__main__':
     from optparse import OptionParser
     from glob import glob
     from zipfile import ZipFile 
-    parser = OptionParser (usage='%prog [-h] [-u] [-m] [-c C] [-d D] [-n CPL] [-b BPL] [-o DIR] [-v V] [-x] [-p PFMT] [-t] [-s] <file1> [<file2> ...]', version=str(VERSION))
+    ustr = '%prog [-h] [-u] [-m] [-c C] [-d D] [-n CPL] [-b BPL] [-o DIR] [-v V]\n'
+    ustr += '[-x] [-p PFMT] [-t] [-s] [-i] [--v1] [--noped] [--stems] <file1> [<file2> ...]'
+    parser = OptionParser (usage=ustr, version=str(VERSION))
     parser.add_option ("-u", action="store_true", help="unfold simple repeats")
     parser.add_option ("-m", action="store", help="0 -> no %%MIDI, 1 -> minimal %%MIDI, 2-> all %%MIDI", default=0)
     parser.add_option ("-c", action="store", type="int", help="set credit text filter to C", default=0, metavar='C')
@@ -1510,6 +1520,7 @@ if __name__ == '__main__':
     parser.add_option ("-s", action="store_true", help="shift node heads 3 units left in a tab staff")
     parser.add_option ("--v1", action="store_true", help="start-stop directions allways to first voice of staff")
     parser.add_option ("--noped", action="store_false", help="skip all pedal directions", dest='ped', default=True)
+    parser.add_option ("--stems", action="store_true", help="translate stem directions", dest='stm', default=False)
     parser.add_option ("-i", action="store_true", help="read xml file from standard input")
     options, args = parser.parse_args ()
     if options.n < 0: parser.error ('only values >= 0')
