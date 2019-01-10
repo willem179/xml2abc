@@ -18,7 +18,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 87
+VERSION = 88
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -234,7 +234,7 @@ class Music:
     def addChord (s, note, noot):   # careful: we assume that chord notes follow immediately
         for d in note.before:       # put all decorations before chord
             if d not in s.lastnote.before:
-                s.lastnote.before = [d] + s.lastnote.before
+                s.lastnote.before += [d]
         s.lastnote.ns.append (note.ntdec + noot)
 
     def addBar (s, lbrk, m): # linebreak, measure data
@@ -887,7 +887,7 @@ class Parser:
             if type != 'stop': note.before = ['!%s%s!' % (int (trem.text) * '/', duo)] + note.before
         fingering = nttn.findall ('technical/fingering')
         for finger in fingering:    # handle multiple finger annotations
-            if not isTab: note.ntdec += '!%s!' % finger.text    # validate text?
+            if not isTab: note.before += ['!%s!' % finger.text] # fingering goes before chord (addChord)
         snaar = nttn.find ('technical/string')
         if snaar != None and isTab:
             if s.tstep:
