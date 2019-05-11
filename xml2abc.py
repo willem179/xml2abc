@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 88
+VERSION = 90
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -714,7 +714,7 @@ def prgroupelem (x, gnm, bar, pmap, accVce, accStf):    # collect partnames (acc
         if gnm[0]: x = [n1 + ':' + n2 for n1, n2 in zip (gnm, x)]   # put group-name before part-name
         accVce.append (x)
         accStf.extend (bracePart (y))
-    elif len (x) == 2:      # misuse of group just to add extra name to stave
+    elif len (x) == 2 and type (x[0]) == tupletype: # misuse of group just to add extra name to stave
         y = pmap.pop (0)
         nms = [n1 + ':' + n2 for n1, n2 in zip (x[0], x[1][2:])]    # x[0] = partname-tuple, x[1][2:] = groupname-tuple
         accVce.append (nms)
@@ -1342,9 +1342,9 @@ class Parser:
         mils = d.findtext ('scaling/millimeters')   # mills == staff height (mm)
         tenths = d.findtext ('scaling/tenths')      # staff height in tenths
         if not mils or not tenths: return
-        xmlScale = float (mils) / float (tenths);   # tenths -> mm
+        xmlScale = float (mils) / float (tenths) / 10   # tenths -> mm
         space = 10 * xmlScale       # space between staff lines == 10 tenths
-        abcScale = space / 2.117    # 2.117 mm = 6pt = space between staff lines for scale = 1.0 in abcm2ps
+        abcScale = space / 0.2117   # 0.2117 cm = 6pt = space between staff lines for scale = 1.0 in abcm2ps
         abcOut.pageFmt ['scale'] = abcScale
         eks = 2 * ['page-layout/'] + 4 * ['page-layout/page-margins/']
         eks = [a+b for a,b in zip (eks, 'page-height,page-width,left-margin,right-margin,top-margin,bottom-margin'.split (','))]
@@ -1352,7 +1352,7 @@ class Parser:
             v = d.findtext (eks [i])
             k = abcOut.pagekeys [i+1]   # pagekeys [0] == scale already done, skip it
             if not abcOut.pageFmt [k] and v:
-                try: abcOut.pageFmt [k] = float (v) * xmlScale / 10.    # -> cm
+                try: abcOut.pageFmt [k] = float (v) * xmlScale  # -> cm
                 except: info ('illegal value %s for xml element %s', (v, eks [i])); continue    # just skip illegal values
 
     def locStaffMap (s, part, maten):   # map voice to staff with majority voting
