@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 90
+VERSION = 91
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -115,6 +115,7 @@ class Measure:
         s.ixm = 0       # measure number
         s.mdur = 0      # measure duration (nominal metre value in divisions)
         s.divs = 0      # number of divisions per 1/4
+        s.mtr = 4,4     # meter
 
     def reset (s):      # reset each measure
         s.attr = ''     # measure signatures, tempo
@@ -290,7 +291,7 @@ class Music:
             vn, vl = [], {}         # for voice iv: collect all notes to vn and all lyric lines to vl
             for im in range (len (s.gMaten)):
                 measure = s.gMaten [im][iv]
-                vn.append (outVoice (measure, divs, im, ip, unitL))
+                vn.append (outVoice (measure, divs [im], im, ip, unitL))
                 checkMelismas (s.gLyrics, s.gMaten, im, iv)
                 for n, (lyrstr, melis) in s.gLyrics [im][iv].items ():
                     if n in vl:
@@ -736,10 +737,10 @@ def compUnitLength (iv, maten, divs):   # compute optimal unit length
     uLmin, minLen = 0, max_int
     for uL in [4,8,16]:     # try 1/4, 1/8 and 1/16
         vLen = 0            # total length of abc duration strings in this voice
-        for m in maten:     # all measures
+        for im, m in enumerate (maten): # all measures
             for e in m[iv]: # all notes in voice iv
                 if isinstance (e, Elem) or e.dur == 0: continue # no real durations
-                vLen += len (abcdur (e, divs, uL))  # add len of duration string
+                vLen += len (abcdur (e, divs [im], uL))  # add len of duration string
         if vLen < minLen: uLmin, minLen = uL, vLen  # remember the smallest
     return uLmin
 
@@ -1057,8 +1058,9 @@ class Parser:
             unit = e.findtext ('time/beat-type')
             mtr = beats + '/' + unit
             if first: abcOut.mtr = mtr          # first measure -> header
-            else: s.msr.attr += '[M:%s]' % mtr # otherwise -> voice
-            s.msr.mdur = (s.msr.divs * int (beats) * 4) // int (unit)    # duration of measure in xml-divisions
+            else: s.msr.attr += '[M:%s]' % mtr  # otherwise -> voice
+            s.msr.mtr = int (beats), int (unit)
+        s.msr.mdur = (s.msr.divs * s.msr.mtr[0] * 4) // s.msr.mtr[1]   # duration of measure in xml-divisions
         for ms in e.findall('measure-style'):
             n = int (ms.get ('number', '1'))    # staff number
             voices = s.stfMap [n]               # all voices of staff n
@@ -1450,6 +1452,7 @@ class Parser:
             s.msc.initVoices (newPart = 1)  # create all voices
             aantalHerhaald = 0  # keep track of number of repititions
             herhaalMaat = 0     # target measure of the repitition
+            divisions = []      # current value of <divisions> for each measure
             s.msr = Measure (ip)   # various measure data
             while s.msr.ixm < len (maten):
                 maat = maten [s.msr.ixm]
@@ -1472,6 +1475,7 @@ class Parser:
                         s.msc.incTime (dt)
                     elif e.tag == 'print':  lbrk = s.doPrint (e)
                 s.msc.addBar (lbrk, s.msr)
+                divisions.append (s.msr.divs)
                 if   herhaal == 1:
                     herhaalMaat = s.msr.ixm
                     s.msr.ixm += 1
@@ -1485,7 +1489,7 @@ class Parser:
                 else: s.msr.ixm += 1        # on to the next measure
             for rv in s.repeat_str.values ():   # close hanging measure-repeats without stop
                 rv [0] = '[I:repeat %s %d]' % (rv [1], 1)
-            vvmap = s.msc.outVoices (s.msr.divs, ip, s.isSib)
+            vvmap = s.msc.outVoices (divisions, ip, s.isSib)
             s.addStaffMap (vvmap)           # update global staff map
             s.addMidiMap (ip, vvmap)
             vvmapAll.update (vvmap)
