@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 92
+VERSION = 93
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -610,8 +610,8 @@ def sortMeasure (voice, m):
     v = []
     rs = []                            # holds rests in between notes
     for i, nx in enumerate (voice):    # establish sequentiality
-        if nx.tijd > time:             # fill hole with invisble rest
-            v.append (Note (nx.tijd - time, 'x'))
+        if nx.tijd > time and chkbug (nx.tijd - time, m):
+            v.append (Note (nx.tijd - time, 'x'))   # fill hole with invisble rest
             rs.append (len (v) - 1)
         if isinstance (nx, Elem):
             if nx.tijd < time: nx.tijd = time # shift elems without duration to where they fit
@@ -814,6 +814,11 @@ def addoct (ptc, o):    # xml staff step, xml octave number
     if o > 5: p = p + (o-5) * "'"
     if o < 4: p = p + (4-o) * ","
     return p            # abc pitch == abc note without accidental
+
+def chkbug (dt, m):
+    if dt > m.divs / 16: return 1   # duration should be > 1/64 note
+    info ('MuseScore bug: incorrect duration, smaller then 1/64! in measure %d, part %d' % (m.ixm, m.ixp))
+    return 0
 
 #----------------
 # parser
@@ -1474,10 +1479,10 @@ class Parser:
                     elif e.tag == 'barline': herhaal = s.doBarline (e)
                     elif e.tag == 'backup':
                         dt = int (e.findtext ('duration'))
-                        s.msc.incTime (-dt)
+                        if chkbug (dt, s.msr): s.msc.incTime (-dt)
                     elif e.tag == 'forward':
                         dt = int (e.findtext ('duration'))
-                        s.msc.incTime (dt)
+                        if chkbug (dt, s.msr): s.msc.incTime (dt)
                     elif e.tag == 'print':  lbrk = s.doPrint (e)
                 s.msc.addBar (lbrk, s.msr)
                 divisions.append (s.msr.divs)
