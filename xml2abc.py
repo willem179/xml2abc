@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 93
+VERSION = 94
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -651,7 +651,7 @@ def sortMeasure (voice, m):
 def getPartlist (ps):   # correct part-list (from buggy xml-software)
     xs = [] # the corrected part-list
     e = []  # stack of opened part-groups
-    for x in ps.getchildren (): # insert missing stops, delete double starts
+    for x in list (ps): # insert missing stops, delete double starts
         if x.tag ==  'part-group':
             num, type = x.get ('number'), x.get ('type')
             if type == 'start':
@@ -1469,7 +1469,7 @@ class Parser:
                 herhaal, lbrk = 0, ''
                 s.msr.reset ()
                 s.curalts = {}  # passing accidentals are reset each measure
-                es = maat.getchildren ()
+                es = list (maat)
                 for i, e in enumerate (es):
                     if   e.tag == 'note':       s.doNote (e)
                     elif e.tag == 'attributes': s.doAttr (e)
@@ -1486,7 +1486,7 @@ class Parser:
                     elif e.tag == 'print':  lbrk = s.doPrint (e)
                 s.msc.addBar (lbrk, s.msr)
                 divisions.append (s.msr.divs)
-                if   herhaal == 1:
+                if herhaal == 1:
                     herhaalMaat = s.msr.ixm
                     s.msr.ixm += 1
                 elif herhaal == 2:
