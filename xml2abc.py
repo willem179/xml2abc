@@ -779,6 +779,7 @@ def perc2map (abcIn):
     abc = map (lambda x: x.strip (), percSvg.splitlines ())
     id='default'
     maps = {'default': []};
+    dmaps = {'default': []}
     r1 = re.compile (r'V:\s*(\S+)')
     ls = abcIn.splitlines ()
     for x in ls:
@@ -787,20 +788,23 @@ def perc2map (abcIn):
             if kop in fillmap: kop = kop + '+' + ',' + kop
             x = '%%%%map perc%s %s print=%s midi=%s heads=%s' % (id, noot, step, midi, kop)
             maps [id].append (x)
+        if '%%MIDI' in x: dmaps [id].append (x)
         if 'V:' in x:
             r = r1.match (x)
             if r:
                 id = r.group (1);
-                if id not in maps: maps [id] = [];
+                if id not in maps: maps [id] = []; dmaps [id] = []
     ids = sorted (maps.keys ())
     for id in ids: abc += maps [id]
+    id='default'
     for x in ls:
         if 'I:percmap' in x: continue
+        if '%%MIDI' in x: continue
         if 'V:' in x or 'K:' in x:
             r = r1.match (x)
             if r: id = r.group (1)
-            if len (maps [id]) == 0: id = 'default'
             abc.append (x)
+            if id in dmaps and len (dmaps [id]) > 0: abc.extend (dmaps [id]); del dmaps [id]
             if 'perc' in x and 'map=' not in x: x += ' map=perc';
             if 'map=perc' in x and len (maps [id]) > 0: abc.append ('%%voicemap perc' + id);
             if 'map=off' in x: abc.append ('%%voicemap');            
