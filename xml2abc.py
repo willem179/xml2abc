@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 94
+VERSION = 95
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -912,10 +912,10 @@ class Parser:
             else:
                 deco = '!%s!' % snaar.text  # no double string decos (bug in musescore)
                 if deco not in note.ntdec: note.ntdec += deco
-        wvln = nttn.find ('ornaments/wavy-line')
-        if wvln != None:
+        wvlns = nttn.findall ('ornaments/wavy-line')
+        for wvln in wvlns:
             if   wvln.get ('type') == 'start': note.before = ['!trill(!'] + note.before # keep left-right order!
-            elif wvln.get ('type') == 'stop': note.before = ['!trill)!'] + note.before
+            elif wvln.get ('type') == 'stop': note.after += '!trill)!'
         glis = nttn.find ('glissando')
         if glis == None: glis = nttn.find ('slide') # treat slide as glissando
         if glis != None:
