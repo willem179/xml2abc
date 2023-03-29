@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 95
+VERSION = 96
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -103,7 +103,12 @@ tabSvg = '''%%beginsvg
 kopSvg = '<g id="kop%s" class="bf"><use xlink:href="#clr"></use><text x="-2" y="3">%s</text></g>\n'
 kopSvg2 = '<g id="kop%s" class="bf"><use xlink:href="#clr2"></use><text x="-2" y="3">%s</text></g>\n'
 
-def info (s, warn=1): sys.stderr.write ((warn and '-- ' or '') + s + '\n')
+info_list = []  # diagnostic messages
+def info (s, warn=1):
+    x = ('-- ' if warn else '') + s + '\n'
+    info_list.append (x)
+    if __name__ == '__main__':  # only when run from the command line
+        sys.stderr.write (x)
 
 #-------------------
 # data abstractions
@@ -351,6 +356,7 @@ class ABCoutput:
         s.tstep = options.t     # translate percmap to voicemap
         s.stemless = 0          # use U:s=!stemless!
         s.shiftStem = options.s # shift note heads 3 units left
+        s.dojef = 0             # => s.tstep in mkHeader
         if pad:
             _, base_name = os.path.split (fnmext)
             s.outfile = open (os.path.join (pad, base_name), 'w')
@@ -418,7 +424,7 @@ class ABCoutput:
                 if abcMid (abcNote) != midiNote or abcNote != step:
                     if s.volpan > 0: hd.append ('%%%%MIDI drummap %s %s\n' % (abcNote, midiNote))
                     hd.append ('I:percmap %s %s %s %s\n' % (abcNote, step, midiNote, notehead))
-                    s.dojef = s.tstep
+                    s.dojef = s.tstep   # == options.t
             if defL != s.cmpL [vnum-1]: # only if computed unit length different from header
                 hd.append ('L:1/%d\n' % s.cmpL [vnum-1])
         s.outlist = hd + s.outlist
@@ -431,9 +437,13 @@ class ABCoutput:
             tbs = map (lambda x: x.strip () + '\n', tb.splitlines ())   # javascript compatibility
             s.outlist = tbs + ks + ['</defs>\n%%endsvg\n'] + s.outlist
 
-    def writeall (s):  # determine the required encoding of the entire ABC output
+    def getABC (s):
         str = ''.join (s.outlist)
         if s.dojef: str = perc2map (str)
+        return str
+
+    def writeall (s):  # determine the required encoding of the entire ABC output
+        str = s.getABC ()
         if python3: s.outfile.write (str)
         else:       s.outfile.write (str.encode ('utf-8'))
         if s.pad: s.outfile.close ()                # close each file with -o option
@@ -1446,9 +1456,9 @@ class Parser:
             s.tabVceMap [vabc] = xs
             s.koppen [fret] = 1  # collect noteheads for SVG defs
 
-    def parse (s, fobj):
+    def parse (s, xmltxt):
         vvmapAll = {}   # collect xml->abc voice maps (vvmap) of all parts
-        e = E.parse (fobj)
+        e = E.fromstring (xmltxt)
         s.mkTitle (e)
         s.doDefaults (e)
         partlist = s.doPartList (e)
@@ -1509,8 +1519,27 @@ class Parser:
             vvmapAll.update (vvmap)
         if vvmapAll:            # skip output if no part has any notes
             abcOut.mkHeader (s.gStfMap, partlist, s.midiMap, s.tabVceMap, s.koppen)
-            abcOut.writeall ()
         else: info ('nothing written, %s has no notes ...' % abcOut.fnmext)
+
+def vertaal (xmltxt, **options_parm):
+    class options:  # the default option values
+        u=0; b=0; n=0; c=0; v=0; d=0; m=0; x=0; t=0;
+        stm=0; mnum=-1; p='f'; s=0; j=0; v1=0; ped=0;
+    global abcOut, info_list
+    info_list = []; str = ''
+    for opt in options_parm:        # assign the given options
+        setattr (options, opt, options_parm [opt])
+    options.p = options.p.split (',') if options.p else []  # [] | [string]
+    abcOut = ABCoutput ('', '', 0, options)
+    psr = Parser (options)
+    try:
+        psr.parse (xmltxt)          # parse xmltxt
+        str = abcOut.getABC ()      # ABC output
+        info ('%s written with %d voices' % (abcOut.fnmext, len (abcOut.clefs)), warn=0)
+    except:
+        etype, value, traceback = sys.exc_info ()   # works in python 2 & 3
+        info ('** %s occurred: %s' % (etype, value), 0)
+    return (str, ''.join (info_list)) # and the diagnostic messages
 
 #----------------
 # Main Program
@@ -1576,7 +1605,8 @@ if __name__ == '__main__':
         abcOut = ABCoutput (fnm + '.abc', pad, X, options)  # create global ABC output object
         psr = Parser (options)  # xml parser
         try:
-            psr.parse (fobj)    # parse file fobj and write abc to <fnm>.abc
+            psr.parse (fobj.read ())    # parse file fobj and write abc to <fnm>.abc
+            abcOut.writeall ()
         except:
             etype, value, traceback = sys.exc_info ()   # works in python 2 & 3
             info ('** %s occurred: %s in %s' % (etype, value, fnmext), 0)
