@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 96
+VERSION = 97
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -460,7 +460,7 @@ def abcLyr (xs, melis): # Convert list xs to abc lyrics.
         if x == '':     # note without lyrics
             if melis: x = '_'   # set melisma
             else: x = '*'       # skip note
-        elif x.endswith ('_') and not x.endswith ('\_'): # start of new melisma
+        elif x.endswith ('_') and not x.endswith (r'\_'): # start of new melisma
             x = x.replace ('_', '') # remove and set melis boolean
             melis = 1           # so next skips will become melisma
         else: melis = 0         # melisma stops on first syllable
@@ -759,7 +759,7 @@ def doSyllable (syl):
     for e in syl:
         if   e.tag == 'elision': txt += '~'
         elif e.tag == 'text':   # escape - and space characters
-            txt += (e.text or '').replace ('_','\_').replace('-', r'\-').replace(' ', '~')
+            txt += (e.text or '').replace ('_',r'\_').replace('-', r'\-').replace(' ', '~')
     if not txt: return txt
     if syl.findtext('syllabic') in ['begin', 'middle']: txt += '-'
     if syl.find('extend') is not None:                  txt += '_'
@@ -1221,7 +1221,7 @@ class Parser:
                 else:           tempo_units = units ['quarter']
                 if metr.find ('beat-unit-dot') != None:
                     tempo_units = simplify (tempo_units [0] * 3, tempo_units [1] * 2)
-                tmpro = re.search ('[.\d]+', metr.findtext ('per-minute'))  # look for a number
+                tmpro = re.search (r'[.\d]+', metr.findtext ('per-minute'))  # look for a number
                 if tmpro: tempo = tmpro.group () # overwrites the value set by the sound element of this direction
             t = dirtyp.find ('wedge')
             if t != None: startStop ('wedge', vs)
