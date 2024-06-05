@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 97
+VERSION = 98
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -1116,7 +1116,7 @@ class Parser:
             s.clefOct [n] = -int (oct);         # xml playback pitch -> abc notation pitch
             if steps: cs += ' transpose=' + str (steps)
             stfdtl = e.find ('staff-details')
-            if stfdtl and int (stfdtl.get ('number', '1')) == n:
+            if stfdtl != None and int (stfdtl.get ('number', '1')) == n:
                 lines = stfdtl.findtext ('staff-lines')
                 if lines:
                     lns= '|||' if lines == '3' and sgn == 'TAB' else lines
