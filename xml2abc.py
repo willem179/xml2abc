@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 98
+VERSION = 99
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -520,8 +520,8 @@ def setKey (fifths, mode):
     mode = mode.lower ()[:3] # only first three chars, no case
     key = sharpness [offTab [mode] + fifths] + (mode if offTab [mode] != 8 else '')
     accs = ['F','C','G','D','A','E','B']
-    if fifths >= 0: msralts = dict (zip (accs[:fifths], fifths * [1]))
-    else:           msralts = dict (zip (accs[fifths:], -fifths * [-1]))
+    if fifths >= 0: msralts = dict (zip (accs[:fifths], fifths * [2]))
+    else:           msralts = dict (zip (accs[fifths:], -fifths * [-2]))
     return key, msralts
 
 def insTup (ix, notes, fact):   # read one nested tuplet
@@ -786,7 +786,7 @@ def getMelisma (maat):                  # get melisma from notes in maat
 
 def perc2map (abcIn):
     fillmap = {'diamond':1, 'triangle':1, 'square':1, 'normal':1};
-    abc = map (lambda x: x.strip (), percSvg.splitlines ())
+    abc = list (map (lambda x: x.strip (), percSvg.splitlines ()))
     id='default'
     maps = {'default': []};
     dmaps = {'default': []}
@@ -957,7 +957,10 @@ class Parser:
         return nt                       # ABC code always in key C (with midi pitch alterations)
 
     def ntAbc (s, ptc, oct, note, v, ntrec, isTab): # pitch, octave -> abc notation
-        acc2alt = {'double-flat':-2,'flat-flat':-2,'flat':-1,'natural':0,'sharp':1,'sharp-sharp':2,'double-sharp':2}
+        acc2alt = {
+            'double-flat':-4, 'flat-flat':-4, 'flat':-2, 'quarter-flat':-1, 'flat-up':-1,
+            'natural':0, 'sharp-down':1, 'sharp':2, 'sharp-sharp':4, 'double-sharp':4
+        }
         oct += s.clefOct.get (s.curStf [v], 0)  # minus clef-octave-change value
         acc = note.findtext ('accidental')  # should be the notated accidental
         alt = note.findtext ('pitch/alter') # pitch alteration (midi)
@@ -966,13 +969,23 @@ class Parser:
             nt = ['__','_','','^','^^'][int (alt or '0') + 2] + addoct (ptc, oct)
             info ('no string notation found for note %s in voice %d' % (nt, v), 1)
         p = addoct (ptc, oct)
-        if alt == None and s.msralts.get (ptc, 0): alt = 0  # no alt but key implies alt -> natural!!
-        if alt == None and (p, v) in s.curalts: alt = 0     # no alt but previous note had one -> natural!!
+        if alt == None:
+            if (p, v) in s.curalts:         # no alt but previous note had one -> natural!!
+                if s.curalts [(p, v)] % 2 == 0: # but only if traditional alt
+                    alt = 0
+            elif s.msralts.get (ptc, 0):    # no alt but key implies alt -> natural!!
+                alt = 0
+        #~ if alt == None and (p, v) in s.curalts: alt = 0     # no alt but previous note had one -> natural!!
+        #~ if alt == None and s.msralts.get (ptc, 0): alt = 0  # no alt but key implies alt -> natural!!
         if acc == None and alt == None: return p    # no acc, no alt
-        elif acc != None:
-            alt = acc2alt [acc]      # acc takes precedence over the pitch here!
+        elif acc != None:   # acc takes precedence over the pitch-alter here!
+            if acc in acc2alt:
+                alt = acc2alt [acc]
+            else:
+                alt = 0
+                info ('accidental %s not supported' % acc)
         else:   # now see if we really must add an accidental
-            alt = int (float (alt))
+            alt = int (round (float (alt) * 2)) # -4 .. +4
             if (p, v) in s.curalts:  # the note in this voice has been altered before
                 if alt == s.curalts [(p, v)]: return p      # alteration still the same
             elif alt == s.msralts.get (ptc, 0): return p    # alteration implied by the key
@@ -980,7 +993,7 @@ class Parser:
             if 'stop' in [e.get ('type') for e in tieElms]: return p    # don't alter tied notes
             info ('accidental %d added in part %d, measure %d, voice %d note %s' % (alt, s.msr.ixp+1, s.msr.ixm+1, v+1, p))
         s.curalts [(p, v)] = alt
-        p = ['__','_','=','^','^^'][alt+2] + p # and finally ... prepend the accidental
+        p = ['__','','_','_/','=','^/','^','','^^'][alt+4] + p # and finally ... prepend the accidental
         return p
 
     def doNote (s, n):    # parse a musicXML note tag
