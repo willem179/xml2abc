@@ -524,6 +524,23 @@ def setKey (fifths, mode):
     else:           msralts = dict (zip (accs[fifths:], -fifths * [-2]))
     return key, msralts
 
+def setKeyAlt (e, acc2alt):
+    es = list (e.find ('key'))
+    p = ''
+    key = 'C exp '
+    for e in es:
+        if e.tag == 'key-step':
+            if p: key += ' ' + p;
+            p = e.text.strip ()
+        elif e.tag == 'key-alter': pass
+        elif e.tag == 'key-accidental':
+            txt = e.text.strip ()
+            if txt in acc2alt: alt = acc2alt [txt]
+            else: alt = 0; info ('accidental %s not supported' % txt)
+            p = (['__','','_','_/','=','^/','^','','^^'][alt+4]) + p
+    if p: key += ' ' + p;
+    return key, {}
+
 def insTup (ix, notes, fact):   # read one nested tuplet
     tupcnt = 0
     nx = notes [ix]
@@ -843,6 +860,8 @@ class Parser:
         [x.strip () for x in '^B,  _D,^^C, _E, _F, ^E, _G,^^F, _A,^^G, _B, _C'.split (',')],
         [x.strip () for x in '__D,^^B,__E,__F,^^D,__G,^^E,__A,_/A,__B,__C,^^A'.split (',')] ]
     step_map = {'C':0,'D':2,'E':4,'F':5,'G':7,'A':9,'B':11}
+    acc2alt = { 'double-flat':-4, 'flat-flat':-4, 'flat':-2, 'quarter-flat':-1, 'flat-up':-1,
+        'natural':0, 'sharp-down':1, 'sharp':2, 'sharp-sharp':4, 'double-sharp':4 }
     def __init__ (s, options):
         # unfold repeats, number of chars per line, credit filter level, volta option
         s.slurBuf = {}    # dict of open slurs keyed by slur number
@@ -957,10 +976,6 @@ class Parser:
         return nt                       # ABC code always in key C (with midi pitch alterations)
 
     def ntAbc (s, ptc, oct, note, v, ntrec, isTab): # pitch, octave -> abc notation
-        acc2alt = {
-            'double-flat':-4, 'flat-flat':-4, 'flat':-2, 'quarter-flat':-1, 'flat-up':-1,
-            'natural':0, 'sharp-down':1, 'sharp':2, 'sharp-sharp':4, 'double-sharp':4
-        }
         oct += s.clefOct.get (s.curStf [v], 0)  # minus clef-octave-change value
         acc = note.findtext ('accidental')  # should be the notated accidental
         alt = note.findtext ('pitch/alter') # pitch alteration (midi)
@@ -979,8 +994,8 @@ class Parser:
         #~ if alt == None and s.msralts.get (ptc, 0): alt = 0  # no alt but key implies alt -> natural!!
         if acc == None and alt == None: return p    # no acc, no alt
         elif acc != None:   # acc takes precedence over the pitch-alter here!
-            if acc in acc2alt:
-                alt = acc2alt [acc]
+            if acc in s.acc2alt:
+                alt = s.acc2alt [acc]
             else:
                 alt = 0
                 info ('accidental %s not supported' % acc)
@@ -1083,9 +1098,13 @@ class Parser:
         if dvstxt: s.msr.divs = int (dvstxt)
         steps = int (e.findtext ('transpose/chromatic', '0'))   # for transposing instrument
         fifths = e.findtext ('key/fifths')
+        ksteps = e.find ('key/key-step') != None
         first = s.msc.tijd == 0 and s.msr.ixm == 0  # first attributes in first measure
-        if fifths:
-            key, s.msralts = setKey (int (fifths), e.findtext ('key/mode','major'))
+        if fifths or ksteps:
+            if fifths:
+                key, s.msralts = setKey (int (fifths), e.findtext ('key/mode','major'))
+            else:
+                key, s.msralts = setKeyAlt (e, s.acc2alt)
             if first and not steps and abcOut.key == 'none':
                 abcOut.key = key                # first measure -> header, if not transposing instrument or percussion part!
             elif key != abcOut.key or not first:
