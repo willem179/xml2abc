@@ -887,6 +887,7 @@ class Parser:
         s.curStf = {}     # xml voice number -> current xml staff number
         s.nolbrk = options.x;   # generate no linebreaks ($)
         s.jscript = options.j   # compatibility with javascript version
+        s.nonat = options.nonat # do not add natural when alter absent (for non-trad. accidentals)
         s.ornaments = sorted (note_ornamentation_map.items ())
         s.doPageFmt = len (options.p) == 1 # translate xml page format
         s.tstep = options.t     # clef determines step on staff (percussion)
@@ -986,7 +987,7 @@ class Parser:
         p = addoct (ptc, oct)
         if alt == None:
             if (p, v) in s.curalts:         # no alt but previous note had one -> natural!!
-                if s.curalts [(p, v)] % 2 == 0: # but only if traditional alt
+                if s.curalts [(p, v)] % 2 == 0 or not s.nonat: # but only if traditional alt
                     alt = 0
             elif s.msralts.get (ptc, 0):    # no alt but key implies alt -> natural!!
                 alt = 0
@@ -1006,7 +1007,8 @@ class Parser:
             elif alt == s.msralts.get (ptc, 0): return p    # alteration implied by the key
             tieElms = note.findall ('tie') + note.findall ('notations/tied')    # in xml we have separate notated ties and playback ties
             if 'stop' in [e.get ('type') for e in tieElms]: return p    # don't alter tied notes
-            info ('accidental %d added in part %d, measure %d, voice %d note %s' % (alt, s.msr.ixp+1, s.msr.ixm+1, v+1, p))
+            acctxt = ['__','','_','_/','=','^/','^','','^^'][alt+4]
+            info ('accidental %s added in part %d, measure %d, voice %d note %s' % (acctxt, s.msr.ixp+1, s.msr.ixm+1, v, p))
         s.curalts [(p, v)] = alt
         p = ['__','','_','_/','=','^/','^','','^^'][alt+4] + p # and finally ... prepend the accidental
         return p
@@ -1599,6 +1601,7 @@ if __name__ == '__main__':
     parser.add_option ("--v1", action="store_true", help="start-stop directions allways to first voice of staff")
     parser.add_option ("--noped", action="store_false", help="skip all pedal directions", dest='ped', default=True)
     parser.add_option ("--stems", action="store_true", help="translate stem directions", dest='stm', default=False)
+    parser.add_option ("--nonat", action="store_true", help="no natural when missing alter", default=False)
     parser.add_option ("-i", action="store_true", help="read xml file from standard input")
     options, args = parser.parse_args ()
     if options.n < 0: parser.error ('only values >= 0')
