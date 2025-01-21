@@ -527,19 +527,25 @@ def setKey (fifths, mode):
 def setKeyAlt (e, acc2alt):
     es = list (e.find ('key'))
     p = ''
+    msralts = {}
     key = 'C exp '
     for e in es:
         if e.tag == 'key-step':
             if p: key += ' ' + p;
             p = e.text.strip ()
-        elif e.tag == 'key-alter': pass
+        elif e.tag == 'key-alter': 
+            alt = e.text.strip ()
+            if alt:
+                alt = float (alt)
+                msralts [p] = int (round (alt * 2))
         elif e.tag == 'key-accidental':
             txt = e.text.strip ()
             if txt in acc2alt: alt = acc2alt [txt]
             else: alt = 0; info ('accidental %s not supported' % txt)
+            if msralts [p] != alt and alt != 0: msralts [p] = alt   # correct non-traditional alterations
             p = (['__','','_','_/','=','^/','^','','^^'][alt+4]) + p
     if p: key += ' ' + p;
-    return key, {}
+    return key, msralts
 
 def insTup (ix, notes, fact):   # read one nested tuplet
     tupcnt = 0
@@ -976,7 +982,7 @@ class Parser:
         s.tabmap [v, nt] = ntrec.tab    # for tablature map (voice, note) -> (string, fret)
         return nt                       # ABC code always in key C (with midi pitch alterations)
 
-    def ntAbc (s, ptc, oct, note, v, ntrec, isTab): # pitch, octave -> abc notation
+    def ntAbc (s, ptc, oct, note, v, stf, ntrec, isTab): # pitch, octave -> abc notation
         oct += s.clefOct.get (s.curStf [v], 0)  # minus clef-octave-change value
         acc = note.findtext ('accidental')  # should be the notated accidental
         alt = note.findtext ('pitch/alter') # pitch alteration (midi)
@@ -986,37 +992,38 @@ class Parser:
             info ('no string notation found for note %s in voice %d' % (nt, v), 1)
         p = addoct (ptc, oct)
         if alt == None:
-            if (p, v) in s.curalts:         # no alt but previous note had one -> natural!!
-                if s.curalts [(p, v)] % 2 == 0 or not s.nonat: # but only if traditional alt
+            if (p, v, stf) in s.curalts:    # no alt but previous note had one -> natural!!
+                if s.curalts [(p, v, stf)] % 2 == 0 or not s.nonat: # but only if traditional alt
                     alt = 0
             elif s.msralts.get (ptc, 0):    # no alt but key implies alt -> natural!!
                 alt = 0
-        #~ if alt == None and (p, v) in s.curalts: alt = 0     # no alt but previous note had one -> natural!!
-        #~ if alt == None and s.msralts.get (ptc, 0): alt = 0  # no alt but key implies alt -> natural!!
+        else:
+            alt = int (round (float (alt) * 2)) # -4 .. +4
         if acc == None and alt == None: return p    # no acc, no alt
-        elif acc != None:   # acc takes precedence over the pitch-alter here!
+        elif (acc != None and                   # acc takes precedence over the pitch-alter here!
+            (not s.nonat or alt != s.acc2alt.get (acc))):   # except for non-traditional accidentals
             if acc in s.acc2alt:
                 alt = s.acc2alt [acc]
             else:
                 alt = 0
                 info ('accidental %s not supported' % acc)
         else:   # now see if we really must add an accidental
-            alt = int (round (float (alt) * 2)) # -4 .. +4
-            if (p, v) in s.curalts:  # the note in this voice has been altered before
-                if alt == s.curalts [(p, v)]: return p      # alteration still the same
+            if (p, v, stf) in s.curalts:  # the note in this voice has been altered before
+                if alt == s.curalts [(p, v, stf)]: return p      # alteration still the same
             elif alt == s.msralts.get (ptc, 0): return p    # alteration implied by the key
             tieElms = note.findall ('tie') + note.findall ('notations/tied')    # in xml we have separate notated ties and playback ties
             if 'stop' in [e.get ('type') for e in tieElms]: return p    # don't alter tied notes
             acctxt = ['__','','_','_/','=','^/','^','','^^'][alt+4]
             info ('accidental %s added in part %d, measure %d, voice %d note %s' % (acctxt, s.msr.ixp+1, s.msr.ixm+1, v, p))
-        s.curalts [(p, v)] = alt
+        s.curalts [(p, v, stf)] = alt
         p = ['__','','_','_/','=','^/','^','','^^'][alt+4] + p # and finally ... prepend the accidental
         return p
 
     def doNote (s, n):    # parse a musicXML note tag
         note = Note ()
         v = int (n.findtext ('voice', '1'))
-        if s.isSib: v += 100 * int (n.findtext ('staff', '1'))  # repair bug in Sibelius
+        xmlstaff = int (n.findtext ('staff', '1'))
+        if s.isSib: v += 100 * xmlstaff  # repair bug in Sibelius
         chord = n.find ('chord') != None
         p = n.findtext ('pitch/step') or n.findtext ('unpitched/display-step')
         o = n.findtext ('pitch/octave') or n.findtext ('unpitched/display-octave')
@@ -1055,7 +1062,7 @@ class Parser:
         e = n.find ('accidental')
         if e != None and e.get ('parentheses') == 'yes': note.ntdec += '!courtesy!'
         if r != None: noot = 'x' if n.get ('print-object') == 'no' or isTab else 'z'
-        else: noot = s.ntAbc (p, int (o), n, v, note, isTab)
+        else: noot = s.ntAbc (p, int (o), n, v, xmlstaff, note, isTab)
         if n.find ('unpitched') != None:
             clef = s.curClef [s.curStf [v]]     # the current clef for this voice
             step = staffStep (p, int (o), clef, s.tstep)        # (clef independent) step value of note on the staff
@@ -1085,7 +1092,6 @@ class Parser:
                 s.msc.appendElem (v, '[I:stemdir %s]' % stemdir)
         if chord: s.msc.addChord (note, noot)
         else:
-            xmlstaff = int (n.findtext ('staff', '1'))
             if s.curStf [v] != xmlstaff:    # the note should go to another staff
                 dstaff = xmlstaff - s.curStf [v]    # relative new staff number
                 s.curStf [v] = xmlstaff     # remember the new staff for this voice
