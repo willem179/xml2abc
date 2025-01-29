@@ -514,17 +514,19 @@ def staffStep (ptc, o, clef, tstep):
     if o < 4: ptc = ptc + (4-o) * ","
     return ptc
 
-def setKey (fifths, mode):
+def setKey (fifths, mode, edo53):
     sharpness = ['Fb', 'Cb','Gb','Db','Ab','Eb','Bb','F','C','G','D','A', 'E', 'B', 'F#','C#','G#','D#','A#','E#','B#']
     offTab = {'maj':8, 'ion':8, 'm':11, 'min':11, 'aeo':11, 'mix':9, 'dor':10, 'phr':12, 'lyd':7, 'loc':13, 'non':8}
     mode = mode.lower ()[:3] # only first three chars, no case
     key = sharpness [offTab [mode] + fifths] + (mode if offTab [mode] != 8 else '')
     accs = ['F','C','G','D','A','E','B']
-    if fifths >= 0: msralts = dict (zip (accs[:fifths], fifths * [2]))
-    else:           msralts = dict (zip (accs[fifths:], -fifths * [-2]))
+    altplus = 4 if edo53 else 1
+    altmin = -5 if edo53 else -1
+    if fifths >= 0: msralts = dict (zip (accs[:fifths], fifths * [altplus]))
+    else:           msralts = dict (zip (accs[fifths:], -fifths * [altmin]))
     return key, msralts
 
-def setKeyAlt (e, acc2alt):
+def setKeyAlt (e, acc2alt, edo53):
     es = list (e.find ('key'))
     p = ''
     msralts = {}
@@ -535,17 +537,23 @@ def setKeyAlt (e, acc2alt):
             p = e.text.strip ()
         elif e.tag == 'key-alter': 
             alt = e.text.strip ()
-            if alt:
-                alt = float (alt)
-                msralts [p] = int (round (alt * 2))
+            if alt: msralts [p] = int (round (float (alt)))
         elif e.tag == 'key-accidental':
             txt = e.text.strip ()
             if txt in acc2alt: alt = acc2alt [txt]
             else: alt = 0; info ('accidental %s not supported' % txt)
-            if msralts [p] != alt and alt != 0: msralts [p] = alt   # correct non-traditional alterations
-            p = (['__','','_','_/','=','^/','^','','^^'][alt+4]) + p
+            msralts [p] = alt;
+            p = alt2abc (alt, edo53) + p
     if p: key += ' ' + p;
     return key, msralts
+
+def alt2abc (alt, edo53):
+    if alt == 0: return '='
+    elif edo53:
+        if alt > 0: return '^' + str (alt)
+        else: return '_' + str (-alt)
+    else:
+        return ['__','_','=','^','^^'][alt+2]
 
 def insTup (ix, notes, fact):   # read one nested tuplet
     tupcnt = 0
@@ -866,8 +874,11 @@ class Parser:
         [x.strip () for x in '^B,  _D,^^C, _E, _F, ^E, _G,^^F, _A,^^G, _B, _C'.split (',')],
         [x.strip () for x in '__D,^^B,__E,__F,^^D,__G,^^E,__A,_/A,__B,__C,^^A'.split (',')] ]
     step_map = {'C':0,'D':2,'E':4,'F':5,'G':7,'A':9,'B':11}
-    acc2alt = { 'double-flat':-4, 'flat-flat':-4, 'flat':-2, 'quarter-flat':-1, 'flat-up':-1,
-        'natural':0, 'sharp-down':1, 'sharp':2, 'sharp-sharp':4, 'double-sharp':4 }
+    acc2alt = {}
+    edo12alt = { 'double-flat':-2, 'flat-flat':-2, 'flat':-1, 'natural':0, 'sharp':1, 'sharp-sharp':2, 'double-sharp':2 }
+    edo53alt = { 'quarter-sharp':1, 'sharp-2':2, 'sharp-down':3, 'sharp':4, 'slash-quarter-sharp':5, 'slash-sharp':8, 
+        'double-sharp':9, 'natural':0, 'quarter-flat':-1, 'flat-2':-2, 'flat-up':-3, 'slash-flat':-4, 'flat':-5,
+        'double-slash-flat':-8, 'flat-flat':-9 }
     def __init__ (s, options):
         # unfold repeats, number of chars per line, credit filter level, volta option
         s.slurBuf = {}    # dict of open slurs keyed by slur number
@@ -893,7 +904,6 @@ class Parser:
         s.curStf = {}     # xml voice number -> current xml staff number
         s.nolbrk = options.x;   # generate no linebreaks ($)
         s.jscript = options.j   # compatibility with javascript version
-        s.nonat = options.nonat # do not add natural when alter absent (for non-trad. accidentals)
         s.ornaments = sorted (note_ornamentation_map.items ())
         s.doPageFmt = len (options.p) == 1 # translate xml page format
         s.tstep = options.t     # clef determines step on staff (percussion)
@@ -904,6 +914,7 @@ class Parser:
         s.repeat_str = {} # staff number -> [measure number, repeat-text]
         s.tabVceMap = {}  # abc voice num -> [%%map ...] for tab voices
         s.koppen = {}     # noteheads needed for %%map
+        s.edo53 = 0       # has microtones
 
     def matchSlur (s, type2, n, v2, note2, grace, stopgrace): # match slur number n in voice v2, add abc code to before/after
         if type2 not in ['start', 'stop']: return   # slur type continue has no abc equivalent
@@ -982,6 +993,18 @@ class Parser:
         s.tabmap [v, nt] = ntrec.tab    # for tablature map (voice, note) -> (string, fret)
         return nt                       # ABC code always in key C (with midi pitch alterations)
 
+    def isEdo53 (s, e):  # check for edo53
+        accs = e.findall ('.//accidental')
+        for acc in accs:
+            a = acc.text
+            if a not in s.edo12alt: return True
+        return False
+
+    def getcuralt (s, p, v, stf, ptc):
+        if (p, v, stf) in s.curalts:    # the note in this voice has been altered before
+            return s.curalts [(p, v, stf)]
+        return s.msralts.get (ptc, None)   # get alteration implied by the key
+
     def ntAbc (s, ptc, oct, note, v, stf, ntrec, isTab): # pitch, octave -> abc notation
         oct += s.clefOct.get (s.curStf [v], 0)  # minus clef-octave-change value
         acc = note.findtext ('accidental')  # should be the notated accidental
@@ -993,30 +1016,32 @@ class Parser:
         p = addoct (ptc, oct)
         if alt == None:
             if (p, v, stf) in s.curalts:    # no alt but previous note had one -> natural!!
-                if s.curalts [(p, v, stf)] % 2 == 0 or not s.nonat: # but only if traditional alt
-                    alt = 0
+                alt = 0
             elif s.msralts.get (ptc, 0):    # no alt but key implies alt -> natural!!
                 alt = 0
+        elif s.edo53: alt = None            # ignore alt because not standard MusicXML !!=
+        elif '.' in alt: alt = None         # ignore float values of alter in edo12
         else:
-            alt = int (round (float (alt) * 2)) # -4 .. +4
-        if acc == None and alt == None: return p    # no acc, no alt
-        elif (acc != None and                   # acc takes precedence over the pitch-alter here!
-            (not s.nonat or alt != s.acc2alt.get (acc))):   # except for non-traditional accidentals
+            alt = int (alt)                 # -2 .. +2
+        if acc == None and alt == None: return p                # no acc, no alt
+        elif acc != None:    # acc takes precedence over the pitch-alter here!
             if acc in s.acc2alt:
-                alt = s.acc2alt [acc]
+                if s.acc2alt [acc] != s.getcuralt (p,v,stf,ptc):
+                    alt = s.acc2alt [acc]
+                elif alt == None: return p
+                elif alt == 0 and s.edo53: return p
+                else: info ('error with accidental %s, alter %s' % (acc, alt))
             else:
                 alt = 0
                 info ('accidental %s not supported' % acc)
         else:   # now see if we really must add an accidental
-            if (p, v, stf) in s.curalts:  # the note in this voice has been altered before
-                if alt == s.curalts [(p, v, stf)]: return p      # alteration still the same
-            elif alt == s.msralts.get (ptc, 0): return p    # alteration implied by the key
+            if alt == s.getcuralt (p,v,stf,ptc): return p
             tieElms = note.findall ('tie') + note.findall ('notations/tied')    # in xml we have separate notated ties and playback ties
             if 'stop' in [e.get ('type') for e in tieElms]: return p    # don't alter tied notes
-            acctxt = ['__','','_','_/','=','^/','^','','^^'][alt+4]
+            acctxt = alt2abc (alt, s.edo53)
             info ('accidental %s added in part %d, measure %d, voice %d note %s' % (acctxt, s.msr.ixp+1, s.msr.ixm+1, v, p))
         s.curalts [(p, v, stf)] = alt
-        p = ['__','','_','_/','=','^/','^','','^^'][alt+4] + p # and finally ... prepend the accidental
+        p = alt2abc (alt, s.edo53) + p # and finally ... prepend the accidental
         return p
 
     def doNote (s, n):    # parse a musicXML note tag
@@ -1110,9 +1135,9 @@ class Parser:
         first = s.msc.tijd == 0 and s.msr.ixm == 0  # first attributes in first measure
         if fifths or ksteps:
             if fifths:
-                key, s.msralts = setKey (int (fifths), e.findtext ('key/mode','major'))
+                key, s.msralts = setKey (int (fifths), e.findtext ('key/mode','major'), s.edo53)
             else:
-                key, s.msralts = setKeyAlt (e, s.acc2alt)
+                key, s.msralts = setKeyAlt (e, s.acc2alt, s.edo53)
             if first and not steps and abcOut.key == 'none':
                 abcOut.key = key                # first measure -> header, if not transposing instrument or percussion part!
             elif key != abcOut.key or not first:
@@ -1499,6 +1524,8 @@ class Parser:
     def parse (s, xmltxt):
         vvmapAll = {}   # collect xml->abc voice maps (vvmap) of all parts
         e = E.fromstring (xmltxt)
+        s.edo53 = s.isEdo53 (e)
+        s.acc2alt = s.edo53alt if s.edo53 else s.edo12alt
         s.mkTitle (e)
         s.doDefaults (e)
         partlist = s.doPartList (e)
@@ -1607,7 +1634,6 @@ if __name__ == '__main__':
     parser.add_option ("--v1", action="store_true", help="start-stop directions allways to first voice of staff")
     parser.add_option ("--noped", action="store_false", help="skip all pedal directions", dest='ped', default=True)
     parser.add_option ("--stems", action="store_true", help="translate stem directions", dest='stm', default=False)
-    parser.add_option ("--nonat", action="store_true", help="no natural when missing alter", default=False)
     parser.add_option ("-i", action="store_true", help="read xml file from standard input")
     options, args = parser.parse_args ()
     if options.n < 0: parser.error ('only values >= 0')
@@ -1651,3 +1677,4 @@ if __name__ == '__main__':
         except:
             etype, value, traceback = sys.exc_info ()   # works in python 2 & 3
             info ('** %s occurred: %s in %s' % (etype, value, fnmext), 0)
+            raise
