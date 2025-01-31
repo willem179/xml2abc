@@ -372,7 +372,7 @@ class ABCoutput:
     def add (s, str):
         s.outlist.append (str + '\n')   # collect all ABC output
 
-    def mkHeader (s, stfmap, partlist, midimap, vmpdct, koppen): # stfmap = [parts], part = [staves], stave = [voices]
+    def mkHeader (s, stfmap, partlist, midimap, vmpdct, koppen, edo53): # stfmap = [parts], part = [staves], stave = [voices]
         accVce, accStf, staffs = [], [], stfmap[:]  # staffs is consumed
         for x in partlist:              # collect partnames into accVce and staff groups into accStf
             try: prgroupelem (x, ('', ''), '', stfmap, accVce, accStf)
@@ -386,6 +386,7 @@ class ABCoutput:
             snm = partabbrv.replace ('\n','\\n').replace ('.:','.').strip (':')
             clfnms [firstVoice] = (nm and 'nm="%s"' % nm or '') + (snm and ' snm="%s"' % snm or '')
         hd = ['X:%d\n%s\n' % (s.X, s.title)]
+        if edo53: hd.append ('%%MIDI temperamentequal 53\n')
         for i, k in enumerate (s.pagekeys):
             if s.jscript and k in ['pageheight','topmargin', 'botmargin']: continue
             if s.pageFmt [k] != None: hd.append ('%%%%%s %.2f%s\n' % (k, s.pageFmt [k], i > 0 and 'cm' or ''))
@@ -435,7 +436,7 @@ class ABCoutput:
             ks = sorted (koppen.keys ())                                # javascript compatibility
             ks = [k2 % (k, k) if len (k) == 2 else k1 % (k, k) for k in ks]
             tbs = map (lambda x: x.strip () + '\n', tb.splitlines ())   # javascript compatibility
-            s.outlist = tbs + ks + ['</defs>\n%%endsvg\n'] + s.outlist
+            s.outlist = list (tbs) + ks + ['</defs>\n%%endsvg\n'] + s.outlist
 
     def getABC (s):
         str = ''.join (s.outlist)
@@ -1014,34 +1015,29 @@ class Parser:
             nt = ['__','_','','^','^^'][int (alt or '0') + 2] + addoct (ptc, oct)
             info ('no string notation found for note %s in voice %d' % (nt, v), 1)
         p = addoct (ptc, oct)
-        if alt == None:
+        if acc != None:
+            alt = s.acc2alt [acc]
+            if s.curalts.get ((p, v, stf), None) == alt:    # do not show accidental (Musescore logic)
+                if not isTab: return p
+            s.curalts [(p, v, stf)] = alt
+            p = alt2abc (alt, s.edo53) + p  # and finally ... prepend the accidental
+            return p
+        elif alt == None:
             if (p, v, stf) in s.curalts:    # no alt but previous note had one -> natural!!
                 alt = 0
             elif s.msralts.get (ptc, 0):    # no alt but key implies alt -> natural!!
                 alt = 0
         elif s.edo53: alt = None            # ignore alt because not standard MusicXML !!=
         elif '.' in alt: alt = None         # ignore float values of alter in edo12
-        else:
-            alt = int (alt)                 # -2 .. +2
-        if acc == None and alt == None: return p                # no acc, no alt
-        elif acc != None:    # acc takes precedence over the pitch-alter here!
-            if acc in s.acc2alt:
-                if s.acc2alt [acc] != s.getcuralt (p,v,stf,ptc):
-                    alt = s.acc2alt [acc]
-                elif alt == None: return p
-                elif alt == 0 and s.edo53: return p
-                else: info ('error with accidental %s, alter %s' % (acc, alt))
-            else:
-                alt = 0
-                info ('accidental %s not supported' % acc)
-        else:   # now see if we really must add an accidental
+        else: alt = int (alt)               # -2 .. +2
+        if alt != None:                     # now see if we really must add an accidental
             if alt == s.getcuralt (p,v,stf,ptc): return p
             tieElms = note.findall ('tie') + note.findall ('notations/tied')    # in xml we have separate notated ties and playback ties
             if 'stop' in [e.get ('type') for e in tieElms]: return p    # don't alter tied notes
             acctxt = alt2abc (alt, s.edo53)
             info ('accidental %s added in part %d, measure %d, voice %d note %s' % (acctxt, s.msr.ixp+1, s.msr.ixm+1, v, p))
-        s.curalts [(p, v, stf)] = alt
-        p = alt2abc (alt, s.edo53) + p # and finally ... prepend the accidental
+            s.curalts [(p, v, stf)] = alt
+            p = alt2abc (alt, s.edo53) + p  # and finally ... prepend the accidental
         return p
 
     def doNote (s, n):    # parse a musicXML note tag
@@ -1585,7 +1581,7 @@ class Parser:
             s.addMidiMap (ip, vvmap)
             vvmapAll.update (vvmap)
         if vvmapAll:            # skip output if no part has any notes
-            abcOut.mkHeader (s.gStfMap, partlist, s.midiMap, s.tabVceMap, s.koppen)
+            abcOut.mkHeader (s.gStfMap, partlist, s.midiMap, s.tabVceMap, s.koppen, s.edo53)
         else: info ('nothing written, %s has no notes ...' % abcOut.fnmext)
 
 def vertaal (xmltxt, **options_parm):
