@@ -879,7 +879,7 @@ class Parser:
     edo12alt = { 'double-flat':-2, 'flat-flat':-2, 'flat':-1, 'natural':0, 'sharp':1, 'sharp-sharp':2, 'double-sharp':2 }
     edo53alt = { 'quarter-sharp':1, 'sharp-2':2, 'sharp-down':3, 'sharp':4, 'slash-quarter-sharp':5, 'slash-sharp':8, 
         'double-sharp':9, 'natural':0, 'quarter-flat':-1, 'flat-2':-2, 'flat-up':-3, 'slash-flat':-4, 'flat':-5,
-        'double-slash-flat':-8, 'flat-flat':-9 }
+        'flat-down':-8, 'double-slash-flat':-8, 'flat-flat':-9 }
     def __init__ (s, options):
         # unfold repeats, number of chars per line, credit filter level, volta option
         s.slurBuf = {}    # dict of open slurs keyed by slur number
@@ -916,6 +916,7 @@ class Parser:
         s.tabVceMap = {}  # abc voice num -> [%%map ...] for tab voices
         s.koppen = {}     # noteheads needed for %%map
         s.edo53 = 0       # has microtones
+        s.altkey = 0      # true if key defined by <key-step> elements
 
     def matchSlur (s, type2, n, v2, note2, grace, stopgrace): # match slur number n in voice v2, add abc code to before/after
         if type2 not in ['start', 'stop']: return   # slur type continue has no abc equivalent
@@ -1017,8 +1018,9 @@ class Parser:
         p = addoct (ptc, oct)
         if acc != None:
             alt = s.acc2alt [acc]
-            if s.curalts.get ((p, v, stf), None) == alt:    # do not show accidental (Musescore logic)
-                if not isTab: return p
+            if s.altkey: curalt = s.getcuralt (p,v,stf,ptc) # key alteration + current alteration
+            else:        curalt = s.curalts.get ((p, v, stf), None) # only current alteration
+            if alt == curalt and not isTab: return p  # do not show accidental
             s.curalts [(p, v, stf)] = alt
             p = alt2abc (alt, s.edo53) + p  # and finally ... prepend the accidental
             return p
@@ -1134,6 +1136,7 @@ class Parser:
                 key, s.msralts = setKey (int (fifths), e.findtext ('key/mode','major'), s.edo53)
             else:
                 key, s.msralts = setKeyAlt (e, s.acc2alt, s.edo53)
+                s.altkey = 1    # key defined by <key-step> elements
             if first and not steps and abcOut.key == 'none':
                 abcOut.key = key                # first measure -> header, if not transposing instrument or percussion part!
             elif key != abcOut.key or not first:
@@ -1673,4 +1676,3 @@ if __name__ == '__main__':
         except:
             etype, value, traceback = sys.exc_info ()   # works in python 2 & 3
             info ('** %s occurred: %s in %s' % (etype, value, fnmext), 0)
-            raise
