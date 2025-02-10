@@ -879,7 +879,7 @@ class Parser:
     edo12alt = { 'double-flat':-2, 'flat-flat':-2, 'flat':-1, 'natural':0, 'sharp':1, 'sharp-sharp':2, 'double-sharp':2 }
     edo53alt = { 'quarter-sharp':1, 'sharp-2':2, 'sharp-down':3, 'sharp':4, 'slash-quarter-sharp':5, 'slash-sharp':8, 
         'double-sharp':9, 'natural':0, 'quarter-flat':-1, 'flat-2':-2, 'flat-up':-3, 'slash-flat':-4, 'flat':-5,
-        'flat-down':-8, 'double-slash-flat':-8, 'flat-flat':-9 }
+        'flat-down':-8, 'double-slash-flat':-8, 'flat-flat':-9, 'natural-up':1, 'natural-down':-1 }
     def __init__ (s, options):
         # unfold repeats, number of chars per line, credit filter level, volta option
         s.slurBuf = {}    # dict of open slurs keyed by slur number
@@ -1017,7 +1017,10 @@ class Parser:
             info ('no string notation found for note %s in voice %d' % (nt, v), 1)
         p = addoct (ptc, oct)
         if acc != None:
-            alt = s.acc2alt [acc]
+            alt = s.acc2alt.get (acc, None)
+            if alt == None:
+                info ('accidental %s not supported in part %d, measure %d, voice %d note %s' % (acc, s.msr.ixp+1, s.msr.ixm+1, v, p))
+                alt = 0
             if s.altkey: curalt = s.getcuralt (p,v,stf,ptc) # key alteration + current alteration
             else:        curalt = s.curalts.get ((p, v, stf), None) # only current alteration
             if alt == curalt and not isTab: return p  # do not show accidental
@@ -1662,7 +1665,8 @@ if __name__ == '__main__':
         elif ext.lower () == '.mxl':        # extract .xml file from .mxl file
             z = ZipFile(fnmext)
             for n in z.namelist():          # assume there is always an xml file in a mxl archive !!
-                if (n[:4] != 'META') and (n[-4:].lower() == '.xml'):
+                if n[:4] != 'META' and (n.lower().endswith ('.xml') or 
+                                        n.lower().endswith ('.musicxml')):
                     fobj = z.open (n)
                     break   # assume only one MusicXML file per archive
         else:
