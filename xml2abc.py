@@ -1009,13 +1009,15 @@ class Parser:
         return s.msralts.get (ptc, None)   # get alteration implied by the key
 
     def alt2acc (s, alt):
+        if re.match (r'[+-]?[01]\.0', alt): # [+/-] 1.0 => 1 and [+/-] 0.0 => 0
+            alt = str (int (float (alt)))
         if '.' in alt:
-            if alt not in ['0.5','-0.5']: return '' # ignore floats when not +/-0.5
+            if alt not in ['0.5','-0.5']: return None # ignore floats when not +/-0.5
             if alt == '0.5': return 'quarter-sharp'
             return 'quarter-flat'
         for k in s.edo12alt.keys ():
             if s.edo12alt [k] == int (alt): return k;
-        return ''
+        return None
 
     def acc2abc (s, acc):
         num = None
@@ -1058,7 +1060,8 @@ class Parser:
         else:                               # alt has a value: map it
             acc = s.alt2acc (alt);
         if acc != None:                     # now see if we really must add an accidental
-            if acc == s.getcuralt (p,v,stf,ptc): return p
+            curalt = s.getcuralt (p,v,stf,ptc)
+            if acc == curalt or (acc == 'natural' and curalt == None): return p
             tieElms = note.findall ('tie') + note.findall ('notations/tied')    # in xml we have separate notated ties and playback ties
             if 'stop' in [e.get ('type') for e in tieElms]: return p    # don't alter tied notes
             acctxt = s.acc2abc (acc)
