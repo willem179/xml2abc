@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 100
+VERSION = 101
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -1030,8 +1030,10 @@ class Parser:
             return '='
         if num == 0: return '=';
         elif s.edo > 0:  # 36 or 53
-            if num > 0: return '^%d' % num;
-            else: return '_%d' % -num;
+            if num > 0: acc = '^%d' % num;
+            else: acc = '_%d' % -num;
+            if s.edo == 36: acc = acc.replace ('3','')    # because in edo36: ^3 == ^ and _3 == _
+            return acc
         else:
             return ['__','_','=','^','^^'][num+2]
 
