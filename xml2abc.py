@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 101
+VERSION = 102
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -913,6 +913,8 @@ class Parser:
         s.edo = 0         # equal division of the octave (36 or 53)
         s.altkey = 0      # true if key defined by <key-step> elements
         s.no36 = options.no36   # map accidentals from edo36 to edo53
+        s.musfin = options.fin  # ignore absence of pitch-alter for microtonal accidentals (finale logic)
+        s.nofin = options.nofin # honor pitch-alter for microtonal accidentals (overrides --fin)
 
     def matchSlur (s, type2, n, v2, note2, grace, stopgrace): # match slur number n in voice v2, add abc code to before/after
         if type2 not in ['start', 'stop']: return   # slur type continue has no abc equivalent
@@ -991,7 +993,7 @@ class Parser:
         s.tabmap [v, nt] = ntrec.tab    # for tablature map (voice, note) -> (string, fret)
         return nt                       # ABC code always in key C (with midi pitch alterations)
 
-    def isEdo53 (s, e):  # check for edo53
+    def scanEdo (s, e):  # check for edo53
         accs = e.findall ('.//accidental')
         edo53 = edo36 = False
         for acc in accs:
@@ -1001,7 +1003,10 @@ class Parser:
             if a in s.edo53alt: edo53 = True
         if edo53  and edo36: info ('this score mixes edo53 and edo36 accidentals.\nthe latter will be approximated')
         if edo36 and s.no36: edo53 = True; edo36 = False;   # force mapping of edo36 to edo53
-        return 53 if edo53 else (36 if edo36 else 0)
+        s.edo = 53 if edo53 else (36 if edo36 else 0)
+        sw = e.findtext ('identification/encoding/software')
+        if sw and not s.nofin:
+            s.musfin = re.search ('musescore|finale', sw, flags=re.I) != None
 
     def getcuralt (s, p, v, stf, ptc):
         if (p, v, stf) in s.curalts:    # the note in this voice has been altered before
@@ -1013,8 +1018,8 @@ class Parser:
             alt = str (int (float (alt)))
         if '.' in alt:
             if alt not in ['0.5','-0.5']: return None # ignore floats when not +/-0.5
-            if alt == '0.5': return 'quarter-sharp'
-            return 'quarter-flat'
+            if s.musfin: return None    # ignore non traditional alterations in finale!
+            return 'quarter-sharp' if alt == '0.5' else 'quarter-flat'
         for k in s.edo12alt.keys ():
             if s.edo12alt [k] == int (alt): return k;
         return None
@@ -1054,10 +1059,10 @@ class Parser:
             p = s.acc2abc (acc) + p         # prepend the accidental
             return p
         elif alt == None:
-            if (p, v, stf) in s.curalts:    # no alt but previous note had one -> natural!!
-                acc = 'natural'
-            elif s.msralts.get (ptc, 0):    # no alt but key implies alt -> natural!!
-                acc = 'natural'
+            curalt = s.getcuralt (p, v, stf, ptc)
+            if curalt:  # no alt but previous note or the key had one -> natural!!
+                if curalt in s.edo12alt: acc = 'natural'
+                elif not s.musfin:     acc = 'natural'
             # here we fall through with alt == None (and acc == None)
         else:                               # alt has a value: map it
             acc = s.alt2acc (alt);
@@ -1553,7 +1558,7 @@ class Parser:
     def parse (s, xmltxt):
         vvmapAll = {}   # collect xml->abc voice maps (vvmap) of all parts
         e = E.fromstring (xmltxt)
-        s.edo = s.isEdo53 (e)
+        s.scanEdo (e)
         s.mkTitle (e)
         s.doDefaults (e)
         partlist = s.doPartList (e)
@@ -1618,7 +1623,7 @@ class Parser:
 
 def vertaal (xmltxt, **options_parm):
     class options:  # the default option values
-        u=0; b=0; n=0; c=0; v=0; d=0; m=0; x=0; t=0;
+        u=0; b=0; n=0; c=0; v=0; d=0; m=0; x=0; t=0; fin=0; nofin=0;
         stm=0; mnum=-1; no36=0; p='f'; s=0; j=0; v1=0; ped=0;
     global abcOut, info_list
     info_list = []; str = ''
@@ -1664,6 +1669,8 @@ if __name__ == '__main__':
     parser.add_option ("--stems", action="store_true", help="translate stem directions", dest='stm', default=False)
     parser.add_option ("-i", action="store_true", help="read xml file from standard input")
     parser.add_option ("--no36", action="store_true", help="map edo36 accidentals to edo53", dest='no36')
+    parser.add_option ("--fin", action="store_true", help="ignore absence of pitch-alter for microtonal accidentals (finale logic)", dest='fin')
+    parser.add_option ("--nofin", action="store_true", help="honor pitch-alter for microtonal accidentals", dest='nofin')
     options, args = parser.parse_args ()
     if options.n < 0: parser.error ('only values >= 0')
     if options.b < 0: parser.error ('only values >= 0')
@@ -1707,4 +1714,5 @@ if __name__ == '__main__':
         except:
             etype, value, traceback = sys.exc_info ()   # works in python 2 & 3
             info ('** %s occurred: %s in %s' % (etype, value, fnmext), 0)
+            print ('fout in: ', fnmext)
             raise
