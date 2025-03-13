@@ -873,7 +873,8 @@ class Parser:
         'double-slash-flat':-8, 'flat-flat':-9 }
     edo36alt = { 'flat-down':-4, 'flat':-3, 'flat-up':-2, 'natural-down':-1, 'natural':0, 'natural-up':1, 'sharp-down':2,
         'sharp':3, 'sharp-up':4 }
-    edomix = { 'flat-down':-8, 'flat-up':-1, 'natural-down':-1, 'natural-up':1, 'sharp-down':1, 'sharp-up':8 }    
+    edomap = { 'flat-down':-8, 'flat-up':-3, 'natural-down':-2, 'natural-up':2, 'sharp-down':3, 'sharp-up':8 }
+    edomix = { 'flat-down':-4, 'flat-up':-2, 'natural-down':-1, 'natural-up':1, 'sharp-down':2, 'sharp-up':4 }
 
     def __init__ (s, options):
         # unfold repeats, number of chars per line, credit filter level, volta option
@@ -912,9 +913,10 @@ class Parser:
         s.koppen = {}     # noteheads needed for %%map
         s.edo = 0         # equal division of the octave (36 or 53)
         s.altkey = 0      # true if key defined by <key-step> elements
-        s.no36 = options.no36   # map accidentals from edo36 to edo53
-        s.musfin = options.fin  # ignore absence of pitch-alter for microtonal accidentals (finale logic)
-        s.nofin = options.nofin # honor pitch-alter for microtonal accidentals (overrides --fin)
+        s.temp = options.temp   # temperament selection
+        s.musfin = options.fin  # strict,burak,musescore,finale: 0,1,2,3
+        s.autoacc = options.fin < 0     # auto detection of encoding software
+        if s.musfin < 0: s.musfin = 2   # default encoder
 
     def matchSlur (s, type2, n, v2, note2, grace, stopgrace): # match slur number n in voice v2, add abc code to before/after
         if type2 not in ['start', 'stop']: return   # slur type continue has no abc equivalent
@@ -1001,12 +1003,17 @@ class Parser:
             if a in s.edo12alt: continue
             if a in s.edo36alt: edo36 = True
             if a in s.edo53alt: edo53 = True
-        if edo53  and edo36: info ('this score mixes edo53 and edo36 accidentals.\nthe latter will be approximated')
-        if edo36 and s.no36: edo53 = True; edo36 = False;   # force mapping of edo36 to edo53
+        if edo53  and edo36: info ('this score mixes edo53 and edo36 accidentals.')
+        if edo36 and s.temp == 1: edo53 = True; edo36 = False;   # force mapping of edo36 to edo53
         s.edo = 53 if edo53 else (36 if edo36 else 0)
-        sw = e.findtext ('identification/encoding/software')
-        if sw and not s.nofin:
-            s.musfin = re.search ('musescore|finale', sw, flags=re.I) != None
+        if s.temp == 2: s.edomap = s.edomix
+        if s.edo > 0:
+            sw = e.findtext ('identification/encoding/software')
+            if sw and s.autoacc:
+                if 'burak' in sw.lower (): s.musfin = 1
+                if 'finale' in sw.lower (): s.musfin = 3
+            enc = 'strict,burak,musescore,finale'.split (',') [s.musfin]
+            info ('encoder: %s, tuning: EDO%d' % (enc, s.edo), warn='')
 
     def getcuralt (s, p, v, stf, ptc):
         if (p, v, stf) in s.curalts:    # the note in this voice has been altered before
@@ -1018,18 +1025,18 @@ class Parser:
             alt = str (int (float (alt)))
         if '.' in alt:
             if alt not in ['0.5','-0.5']: return None # ignore floats when not +/-0.5
-            if s.musfin: return None    # ignore non traditional alterations in finale!
+            if s.musfin > 1: return None    # ignore microtonal alterations in finale/mscore
             return 'quarter-sharp' if alt == '0.5' else 'quarter-flat'
         for k in s.edo12alt.keys ():
             if s.edo12alt [k] == int (alt): return k;
         return None
 
     def acc2abc (s, acc):
-        num = None
+        num = None; mapped = 0;
         if   s.edo == 53: num = s.edo53alt.get (acc, None)
         elif s.edo == 36: num = s.edo36alt.get (acc, None)
         else:             num = s.edo12alt.get (acc, None)
-        if num == None:   num = s.edomix.get (acc, None);
+        if num == None:   num = s.edomap.get (acc, None); mapped = 1;
         if num == None:
             info ('unknown accidental %s' % acc)
             return '='
@@ -1037,7 +1044,8 @@ class Parser:
         elif s.edo > 0:  # 36 or 53
             if num > 0: acc = '^%d' % num;
             else: acc = '_%d' % -num;
-            if s.edo == 36: acc = acc.replace ('3','')    # because in edo36: ^3 == ^ and _3 == _
+            if s.temp == 2 and mapped: acc += '/3';     # fractional mapping
+            if s.edo == 36: acc = acc.replace ('3','')  # because in edo36: ^3 == ^ and _3 == _
             return acc
         else:
             return ['__','_','=','^','^^'][num+2]
@@ -1052,20 +1060,23 @@ class Parser:
             info ('no string notation found for note %s in voice %d' % (nt, v), 1)
         p = addoct (ptc, oct)
         if acc != None:
-            if s.altkey: curalt = s.getcuralt (p,v,stf,ptc) # key alteration + current alteration
-            else:        curalt = s.curalts.get ((p, v, stf), None) # only current alteration
-            if acc == curalt and not isTab: return p  # do not show accidental
+            if s.musfin < 3:    # always show accidentals for finale
+                if s.altkey: curalt = s.getcuralt (p,v,stf,ptc) # key alteration + current alteration
+                else:        curalt = s.curalts.get ((p, v, stf), None) # only current alteration
+                if acc == curalt and not isTab: return p  # do not show accidental
             s.curalts [(p, v, stf)] = acc
             p = s.acc2abc (acc) + p         # prepend the accidental
             return p
         elif alt == None:
-            curalt = s.getcuralt (p, v, stf, ptc)
-            if curalt:  # no alt but previous note or the key had one -> natural!!
-                if curalt in s.edo12alt: acc = 'natural'
-                elif not s.musfin:     acc = 'natural'
+            if s.musfin < 3:    # finale ignores alterations
+                curalt = s.getcuralt (p, v, stf, ptc)
+                if curalt:  # no alt but previous note or the key had one -> natural!!
+                    if s.musfin == 1: acc = curalt # burak encoder
+                    elif curalt in s.edo12alt: acc = 'natural'
+                    elif s.musfin < 2:         acc = 'natural'    # only honor microtonal alterations in strict mode
             # here we fall through with alt == None (and acc == None)
         else:                               # alt has a value: map it
-            acc = s.alt2acc (alt);
+            if s.musfin < 3: acc = s.alt2acc (alt);  # alt has a value: map it (finale ignores alterations)
         if acc != None:                     # now see if we really must add an accidental
             curalt = s.getcuralt (p,v,stf,ptc)
             if acc == curalt or (acc == 'natural' and curalt == None): return p
@@ -1623,8 +1634,8 @@ class Parser:
 
 def vertaal (xmltxt, **options_parm):
     class options:  # the default option values
-        u=0; b=0; n=0; c=0; v=0; d=0; m=0; x=0; t=0; fin=0; nofin=0;
-        stm=0; mnum=-1; no36=0; p='f'; s=0; j=0; v1=0; ped=0;
+        u=0; b=0; n=0; c=0; v=0; d=0; m=0; x=0; t=0; fin=-1;
+        stm=0; mnum=-1; temp=0; p='f'; s=0; j=0; v1=0; ped=0;
     global abcOut, info_list
     info_list = []; str = ''
     for opt in options_parm:        # assign the given options
@@ -1668,9 +1679,8 @@ if __name__ == '__main__':
     parser.add_option ("--noped", action="store_false", help="skip all pedal directions", dest='ped', default=True)
     parser.add_option ("--stems", action="store_true", help="translate stem directions", dest='stm', default=False)
     parser.add_option ("-i", action="store_true", help="read xml file from standard input")
-    parser.add_option ("--no36", action="store_true", help="map edo36 accidentals to edo53", dest='no36')
-    parser.add_option ("--fin", action="store_true", help="ignore absence of pitch-alter for microtonal accidentals (finale logic)", dest='fin')
-    parser.add_option ("--nofin", action="store_true", help="honor pitch-alter for microtonal accidentals", dest='nofin')
+    parser.add_option ("--fin", action="store", type="int", help="rules for microtonal accidentals (-1,0,1,2,3)", dest='fin', default=-1)
+    parser.add_option ("--temp", action="store", type="int", help="temperament for microtonal accidentals (0,1,2)", dest='temp', default=0)
     options, args = parser.parse_args ()
     if options.n < 0: parser.error ('only values >= 0')
     if options.b < 0: parser.error ('only values >= 0')
