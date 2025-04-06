@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # coding=latin-1
 '''
-Copyright (C) 2012: W.G. Vree
+Copyright (C) 2012-2025: W.G. Vree
 Contributions: M. Tarenskeen, N. Liberg, Paul Villiger, Janus Meuris, Larry Myerscough, 
-Dick Jackson, Jan Wybren de Jong, Mark Zealey.
+Dick Jackson, Jan Wybren de Jong, Mark Zealey, Avik Topchyan
 
 This program is free software; you can redistribute it and/or modify it under the terms of the
 Lesser GNU General Public License as published by the Free Software Foundation;
@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 102
+VERSION = 103
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -1071,7 +1071,8 @@ class Parser:
             if s.musfin < 3:    # finale ignores alterations
                 curalt = s.getcuralt (p, v, stf, ptc)
                 if curalt:  # no alt but previous note or the key had one -> natural!!
-                    if s.musfin == 1: acc = curalt # burak encoder
+                    #~ if s.musfin == 1: acc = curalt # burak encoder
+                    if s.musfin == 1: acc = curalt if s.ingrace else 'natural'  # burak encoder
                     elif curalt in s.edo12alt: acc = 'natural'
                     elif s.musfin < 2:         acc = 'natural'    # only honor microtonal alterations in strict mode
             # here we fall through with alt == None (and acc == None)
