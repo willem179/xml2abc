@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 103
+VERSION = 104
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -117,15 +117,12 @@ def disam (acc):
 # data abstractions
 #-------------------
 class Measure:
-    def __init__ (s, p):
-        s.reset ()
+    def __init__ (s, p, im, mv):    # mv = vorige maat
         s.ixp = p       # part number  
-        s.ixm = 0       # measure number
+        s.ixm = im      # measure number
         s.mdur = 0      # measure duration (nominal metre value in divisions)
-        s.divs = 0      # number of divisions per 1/4
-        s.mtr = 4,4     # meter
-
-    def reset (s):      # reset each measure
+        s.divs = mv.divs if mv else 1      # number of divisions per 1/4
+        s.mtr =  mv.mtr  if mv else (4,4)  # metrum
         s.attr = ''     # measure signatures, tempo
         s.lline = ''    # left barline, but only holds ':' at start of repeat, otherwise empty
         s.rline = '|'   # right barline
@@ -179,6 +176,7 @@ class Music:
         s.lastnote = None       # the last real note record inserted in s.voices
         s.bpl = options.b       # the max number of bars per line when writing abc
         s.cpl = options.n       # the number of chars per line when writing abc
+        s.rbm = options.rbm     # rebeam on the beat from the time signature
         s.repbra = 0            # true if volta is used somewhere
         s.nvlt = options.v      # no volta on higher voice numbers
         s.jscript = options.j   # compatibility with javascript version
@@ -285,7 +283,9 @@ class Music:
         s.tijd = s.maxtime = 0
         s.initVoices ()
 
-    def outVoices (s, divs, ip, isSib): # output all voices of part ip
+    def outVoices (s, maatrecs, ip, isSib): # output all voices of part ip
+        divs = [m.divs for m in maatrecs]
+        metra = [m.mtr for m in maatrecs]
         vvmap = {}                  # xml voice number -> abc voice number (one part)
         vnum_keys = list (s.vnums.keys ())
         if s.jscript or isSib: vnum_keys.sort ()
@@ -299,7 +299,7 @@ class Music:
             vn, vl = [], {}         # for voice iv: collect all notes to vn and all lyric lines to vl
             for im in range (len (s.gMaten)):
                 measure = s.gMaten [im][iv]
-                vn.append (outVoice (measure, divs [im], im, ip, unitL))
+                vn.append (outVoice (measure, divs [im], im, ip, unitL, s.rbm, metra [im]))
                 checkMelismas (s.gLyrics, s.gMaten, im, iv)
                 for n, (lyrstr, melis) in s.gLyrics [im][iv].items ():
                     if n in vl:
@@ -600,14 +600,14 @@ def mkBroken (vs):      # introduce broken rhythms (vs: one voice, one measure)
                 i += 1              # do not chain broken rhythms
         i += 1
 
-def outVoice (measure, divs, im, ip, unitL):    # note/elem objects of one measure in one voice
+def outVoice (measure, divs, im, ip, unitL, rebeam, metrum):    # note/elem objects of one measure in one voice
     ix = 0
     while ix < len (measure):   # set all (nested) tuplet annotations
         nx = measure [ix]
         if isinstance (nx, Note) and nx.fact and not nx.grace:
             ix, tupcnt = insTup (ix, measure, (1, 1))   # read one tuplet, insert annotation(s)
         ix += 1 
-    vs = []
+    vs = []; telvor = -1; tel = 0
     for nx in measure:
         if isinstance (nx, Note):
             durstr = abcdur (nx, divs, unitL)           # xml -> abc duration string
@@ -625,6 +625,15 @@ def outVoice (measure, divs, im, ip, unitL):    # note/elem objects of one measu
             s += durstr + tie   # and put it back again
             s += nx.after
             nospace = nx.beam
+            teldivs = { 2: divs, 4: divs, 8: 3 * divs / 2 }
+            noemer = teldivs [metrum [1]]   # selecteer de tel van deze maat
+            if not noemer: noemer = divs    # metrum niet gevonden
+            tel = math.floor (nx.tijd / (noemer if noemer else divs));
+            if rebeam:
+                nospace = tel == telvor     # noten binnen een tel
+                if not nospace and nx.tijd % noemer != 0:  # eerste noot in de volgende tel
+                    nospace = true;         # valt niet precies op de tel
+            telvor = tel
         else:
             if isinstance (nx.str, listtype): nx.str = nx.str [0]
             s = nx.str
@@ -1586,14 +1595,15 @@ class Parser:
             s.diafret = 0       # use diatonic fretting
             s.stafflines = 5
             s.msc.initVoices (newPart = 1)  # create all voices
+            s.maatRecs = [];    # alle Measure objecten
+            s.msr = {};         # huidige Measure object
             aantalHerhaald = 0  # keep track of number of repititions
             herhaalMaat = 0     # target measure of the repitition
-            divisions = []      # current value of <divisions> for each measure
-            s.msr = Measure (ip)   # various measure data
-            while s.msr.ixm < len (maten):
-                maat = maten [s.msr.ixm]
+            im = 0              # maat index
+            while im < len (maten):
+                maat = maten [im]
                 herhaal, lbrk = 0, ''
-                s.msr.reset ()
+                s.msr = Measure (ip, im, s.msr) # various measure data
                 s.curalts = {}  # passing accidentals are reset each measure
                 es = list (maat)
                 for i, e in enumerate (es):
@@ -1611,21 +1621,21 @@ class Parser:
                         if chkbug (dt, s.msr): s.msc.incTime (dt)
                     elif e.tag == 'print':  lbrk = s.doPrint (e)
                 s.msc.addBar (lbrk, s.msr)
-                divisions.append (s.msr.divs)
+                s.maatRecs.append (s.msr);
                 if herhaal == 1:
-                    herhaalMaat = s.msr.ixm
-                    s.msr.ixm += 1
+                    herhaalMaat = im
+                    im += 1
                 elif herhaal == 2:
                     if aantalHerhaald < 1:  # jump
-                        s.msr.ixm = herhaalMaat
+                        im = herhaalMaat
                         aantalHerhaald += 1
                     else:
                         aantalHerhaald = 0  # reset
-                        s.msr.ixm += 1      # just continue
-                else: s.msr.ixm += 1        # on to the next measure
+                        im += 1             # just continue
+                else: im += 1               # on to the next measure
             for rv in s.repeat_str.values ():   # close hanging measure-repeats without stop
                 rv [0] = '[I:repeat %s %d]' % (rv [1], 1)
-            vvmap = s.msc.outVoices (divisions, ip, s.isSib)
+            vvmap = s.msc.outVoices (s.maatRecs, ip, s.isSib)
             s.addStaffMap (vvmap)           # update global staff map
             s.addMidiMap (ip, vvmap)
             vvmapAll.update (vvmap)
@@ -1635,7 +1645,7 @@ class Parser:
 
 def vertaal (xmltxt, **options_parm):
     class options:  # the default option values
-        u=0; b=0; n=0; c=0; v=0; d=0; m=0; x=0; t=0; fin=-1;
+        u=0; b=0; n=0; c=0; v=0; d=0; m=0; x=0; t=0; fin=-1; rbm=0;
         stm=0; mnum=-1; temp=0; p='f'; s=0; j=0; v1=0; ped=0;
     global abcOut, info_list
     info_list = []; str = ''
@@ -1682,6 +1692,7 @@ if __name__ == '__main__':
     parser.add_option ("-i", action="store_true", help="read xml file from standard input")
     parser.add_option ("--fin", action="store", type="int", help="rules for microtonal accidentals (-1,0,1,2,3)", dest='fin', default=-1)
     parser.add_option ("--temp", action="store", type="int", help="temperament for microtonal accidentals (0,1,2)", dest='temp', default=0)
+    parser.add_option ("--rbm", action="store_true", help="re-beam all measures", dest='rbm', default=False)
     options, args = parser.parse_args ()
     if options.n < 0: parser.error ('only values >= 0')
     if options.b < 0: parser.error ('only values >= 0')
