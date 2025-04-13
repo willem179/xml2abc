@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 104
+VERSION = 105
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -1005,7 +1005,7 @@ class Parser:
         return nt                       # ABC code always in key C (with midi pitch alterations)
 
     def scanEdo (s, e):  # check for edo53
-        accs = e.findall ('.//accidental')
+        accs = e.findall ('.//accidental') + e.findall ('.//key-accidental')
         edo53 = edo36 = False
         for acc in accs:
             a = disam (acc.text)
@@ -1019,6 +1019,7 @@ class Parser:
         if s.edo > 0:
             sw = e.findtext ('identification/encoding/software')
             if sw and s.autoacc:
+                if 'abc2xml' in sw.lower (): s.musfin = 0
                 if 'burak' in sw.lower (): s.musfin = 1
                 if 'finale' in sw.lower (): s.musfin = 3
             enc = 'strict,burak,musescore,finale'.split (',') [s.musfin]
