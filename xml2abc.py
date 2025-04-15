@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 105
+VERSION = 106
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -1194,7 +1194,7 @@ class Parser:
             else:
                 key, s.msralts = setKeyAlt (e, s)
                 s.altkey = 1    # key defined by <key-step> elements
-            if first and not steps and abcOut.key == 'none':
+            if first and not (steps % 12) and abcOut.key == 'none':
                 abcOut.key = key                # first measure -> header, if not transposing instrument or percussion part!
             elif key != abcOut.key or not first:
                 s.msr.attr += '[K:%s]' % key    # otherwise -> voice
