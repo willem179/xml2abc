@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 106
+VERSION = 107
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -180,6 +180,7 @@ class Music:
         s.repbra = 0            # true if volta is used somewhere
         s.nvlt = options.v      # no volta on higher voice numbers
         s.jscript = options.j   # compatibility with javascript version
+        s.nbr = options.nbr     # do not introdude broken rhythm (for comparison purpose)
 
     def initVoices (s, newPart=0):
         s.vtimes, s.voices, s.lyrics = {}, {}, {}
@@ -277,7 +278,7 @@ class Music:
                 melis = s.getLastMelis (v, i)  # get melisma from last measure
                 lyrdict [i] = abcLyr (xs, melis)
             s.lyrics[v] = lyrdict       # {number: (abc_lyric_string, melis)} for this measure
-            mkBroken (s.voices[v])
+            if not s.nbr: mkBroken (s.voices[v])    # make broken rhythms
         s.gMaten.append (s.voices)
         s.gLyrics.append (s.lyrics)
         s.tijd = s.maxtime = 0
@@ -600,6 +601,17 @@ def mkBroken (vs):      # introduce broken rhythms (vs: one voice, one measure)
                 i += 1              # do not chain broken rhythms
         i += 1
 
+def bpltel (nx, divs, metrum):
+    noemer = divs       # de tel van deze maat
+    if metrum[1] == 8: noemer = divs / 2
+    tel = int (nx.tijd // noemer)   # == floor ()
+    if metrum [1] == 8:
+        if metrum [0] == 7 or metrum [0] == 5:
+            tel = [0,0,0,1,1,2,2][tel]
+        else:
+            tel = int (tel // 3)
+    return tel, noemer
+
 def outVoice (measure, divs, im, ip, unitL, rebeam, metrum):    # note/elem objects of one measure in one voice
     ix = 0
     while ix < len (measure):   # set all (nested) tuplet annotations
@@ -607,7 +619,7 @@ def outVoice (measure, divs, im, ip, unitL, rebeam, metrum):    # note/elem obje
         if isinstance (nx, Note) and nx.fact and not nx.grace:
             ix, tupcnt = insTup (ix, measure, (1, 1))   # read one tuplet, insert annotation(s)
         ix += 1 
-    vs = []; telvor = -1; tel = 0
+    vs = []; telvor = -1; durvor = 0;
     for nx in measure:
         if isinstance (nx, Note):
             durstr = abcdur (nx, divs, unitL)           # xml -> abc duration string
@@ -625,15 +637,12 @@ def outVoice (measure, divs, im, ip, unitL, rebeam, metrum):    # note/elem obje
             s += durstr + tie   # and put it back again
             s += nx.after
             nospace = nx.beam
-            teldivs = { 2: divs, 4: divs, 8: 3 * divs / 2 }
-            noemer = teldivs [metrum [1]]   # selecteer de tel van deze maat
-            if not noemer: noemer = divs    # metrum niet gevonden
-            tel = math.floor (nx.tijd / (noemer if noemer else divs));
-            if rebeam:
+            tel, noemer = bpltel (nx, divs, metrum)
+            if rebeam and nx.dur < divs and durvor < divs:  # alleen tussen korte noten kijken
                 nospace = tel == telvor     # noten binnen een tel
                 if not nospace and nx.tijd % noemer != 0:  # eerste noot in de volgende tel
-                    nospace = true;         # valt niet precies op de tel
-            telvor = tel
+                    nospace = True;         # valt niet precies op de tel
+            telvor = tel; durvor = nx.dur;
         else:
             if isinstance (nx.str, listtype): nx.str = nx.str [0]
             s = nx.str
@@ -1647,7 +1656,7 @@ class Parser:
 def vertaal (xmltxt, **options_parm):
     class options:  # the default option values
         u=0; b=0; n=0; c=0; v=0; d=0; m=0; x=0; t=0; fin=-1; rbm=0;
-        stm=0; mnum=-1; temp=0; p='f'; s=0; j=0; v1=0; ped=0;
+        stm=0; mnum=-1; temp=0; p='f'; s=0; j=0; v1=0; ped=0; nbr=0;
     global abcOut, info_list
     info_list = []; str = ''
     for opt in options_parm:        # assign the given options
@@ -1694,6 +1703,7 @@ if __name__ == '__main__':
     parser.add_option ("--fin", action="store", type="int", help="rules for microtonal accidentals (-1,0,1,2,3)", dest='fin', default=-1)
     parser.add_option ("--temp", action="store", type="int", help="temperament for microtonal accidentals (0,1,2)", dest='temp', default=0)
     parser.add_option ("--rbm", action="store_true", help="re-beam all measures", dest='rbm', default=False)
+    parser.add_option ("--nbr", action="store_true", help="do not introdude broken rhythm", dest='nbr', default=False)
     options, args = parser.parse_args ()
     if options.n < 0: parser.error ('only values >= 0')
     if options.b < 0: parser.error ('only values >= 0')
