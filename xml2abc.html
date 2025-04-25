@@ -104,6 +104,42 @@ specifications into abc page format instructions (%%pageheight etc).</li>
 <li>Option <b>-i</b> tells <em>xml2abc</em> to read XML data from standard input. When writing
 the an output file with option <b>-o</b> the name of the output file is <em>stdin.xml</em>.
 </li>
+<li>Option <b>--nbr</b> disables translation to broken rhythms.
+Normally xml2abc tries to write broken rythms whenever possible. This option disables that behaviour
+</li>
+<li>Option <b>--rbm</b> re-beams all measures.
+Only meant for files that completely lack any beaming.
+</li>
+<li>Option <b>--fin=N</b> selects the rule set for microtonal accidentals.
+Some well known score editors behave differently when microtonal accidentals
+are present in the score.
+<em>xml2abc</em> uses different translation rules, depending on which score editor was
+used to make the xml file
+When microtonal accidentals are present in the score, <em>xml2abc</em> 
+searches for the identification of the encoding software.
+The following encoders are recognized: <em>abc2xml</em>, <em>burak uyar</em>, <em>musescore</em> and <em>finale</em>.
+When no match is found <em>musescore</em> is assumed.
+With option --fin one can override the automatic detection:<br>
+<em>abc2xml</em>: --fin=0<br>
+<em>burak uyar</em>: --fin=1<br>
+<em>musescore</em>: --fin=2 (default)<br>
+<em>finale</em>: --fin=3<br>
+</li>
+<li>Option <b>--temp=N</b> selects the temperament for microtonal accidentals.
+When microtonal accidentals are present in the score a corresponfing tuning
+is aufomatically selected. Only EDO-53 and EDO-36 are implemented.
+EDO-36 is used for the up/down accidentals in MusicXML and EDO-53
+for the makam accidentals.
+When a mixture of these accidentals is detected, EDO-53 is selected
+and the up/down accidentals are mapped to the closest makam variant.<br>
+--temp=0 => only map up/down accidentals when they occur mixed with makam accidentals (default)<br>
+--temp=1 => always map up/down accidentals, even when not mixed with makam accidentals (i.e. a pure
+EDO-36 file)<br>
+--temp=2 => up/down accidentals are translated to fractional ABC accidentals, and can be
+mixed with (whole number) makam accidentals in ABC.
+For instance, &lt;natural-up> is translated to ^1/3 and &lt;sharp-down> to ^2/3,
+but &lt;quarter-sharp> is translated to ^1, and &lt;sharp> to ^4.
+</li>
 </ul>
 <h3>Download</h3>
 <p>The python script: <a href="xml2abc.py-VERSION.zip">xml2abc.py-VERSION.zip</a>
