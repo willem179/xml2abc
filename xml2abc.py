@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 109
+VERSION = 110
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -173,7 +173,6 @@ class Music:
         s.vnums = {}            # all used voice id's in a part (xml voice id's == numbers)
         s.wev = options.wev     # output empty voices
         s.cnt = Counter ()      # global counter object
-        s.cnt.wev = s.wev
         s.vceCnt = 1            # the global voice count over all parts
         s.lastnote = None       # the last real note record inserted in s.voices
         s.bpl = options.b       # the max number of bars per line when writing abc
@@ -1552,6 +1551,28 @@ class Parser:
             s.stfMap [stf].append (v)
             s.vce2stf [v] = stf # reverse map
             s.curStf [v] = stf  # current staff of XML voice v
+    
+    def emptyStaves (s, part, maten):   # fill each empty staves with an invisible rest in a new voice
+        def addRestToMsre (stf, vce, maat):
+            dvs = part.findtext ('.//divisions', '1')   # duration of the invisible rest
+            xs = '<backup><duration>%s</duration></backup>' % dvs
+            newbck = E.fromstring (xs)
+            xs = '<note print-object="no"><rest measure="yes"/><duration>%s</duration>' % dvs
+            xs += '<voice>%d</voice><staff>%d</staff></note>' % (vce, stf)  # new voice in empty staff
+            newrest = E.fromstring (xs) # invisible rest
+            for i, e in enumerate (maat):   # search for the first note
+                if e.tag == 'note': break;
+            newbck.tail = e.tail    # rest and backup get the same indent as the note
+            newrest.tail = e.tail
+            maat.insert (i, newbck) # insert before i, i now points to newbck
+            maat.insert (i, newrest)    # newrest goes before  newbck
+            s.msc.wev = True        # show empty staves
+        if s.vce2stf == {}: return  # empty part
+        vmax = max (s.vce2stf.keys ())  # new voicenumbers > vmax
+        estfs = [stf for stf, vlst in s.stfMap.items () if vlst == []]  # all empty staves
+        for i, stf in enumerate (estfs):
+            addRestToMsre (stf, vmax + i + 1, maten [0])
+        s.locStaffMap (part, maten) # update s.stfMap, s.vsc2stf and s.curStf
 
     def addStaffMap (s, vvmap): # vvmap: xml voice number -> global abc voice number
         part = [] # default: brace on staffs of one part
@@ -1607,6 +1628,7 @@ class Parser:
         for ip, p in enumerate (parts):
             maten = p.findall ('measure')
             s.locStaffMap (p, maten)        # {voice -> staff} for this part
+            s.emptyStaves (p, maten)        # fill empty staves with new voices containing an invisible rest
             s.drumNotes = {}    # (xml voice, abc note) -> (midi note, note head)
             s.clefOct = {}      # xml staff number -> current clef-octave-change
             s.curClef = {}      # xml staff number -> current abc clef
