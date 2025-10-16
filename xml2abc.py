@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=latin-1
 '''
 Copyright (C) 2012-2025: W.G. Vree
@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 107
+VERSION = 109
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -155,13 +155,13 @@ class Counter:
         tups = list( zip (vnums.keys (), len (vnums) * [0]))
         s.counters = {'note': dict (tups), 'nopr': dict (tups), 'nopt': dict (tups)}
     def getv (s, key, voice): return s.counters[key][voice]
-    def prcnt (s, ip):  # print summary of all non zero counters
+    def prcnt (s, ip, wev = False):  # print summary of all non zero counters
         for iv in s.counters ['note']:
             if s.getv ('nopr', iv) != 0:
                 info ( 'part %d, voice %d has %d skipped non printable notes' % (ip, iv, s.getv ('nopr', iv)))
             if s.getv ('nopt', iv) != 0:
                 info ( 'part %d, voice %d has %d notes without pitch' % (ip, iv, s.getv ('nopt', iv)))
-            if s.getv ('note', iv) == 0: # no real notes counted in this voice
+            if s.getv ('note', iv) == 0 and not wev: # no real notes counted in this voice
                 info ( 'part %d, skipped empty voice %d' % (ip, iv))
 
 class Music:
@@ -171,7 +171,9 @@ class Music:
         s.gMaten = []           # [voices,.. for all measures in a part]
         s.gLyrics = []          # [{num: (abc_lyric_string, melis)},.. for all measures in a part]
         s.vnums = {}            # all used voice id's in a part (xml voice id's == numbers)
+        s.wev = options.wev     # output empty voices
         s.cnt = Counter ()      # global counter object
+        s.cnt.wev = s.wev
         s.vceCnt = 1            # the global voice count over all parts
         s.lastnote = None       # the last real note record inserted in s.voices
         s.bpl = options.b       # the max number of bars per line when writing abc
@@ -292,8 +294,8 @@ class Music:
         if s.jscript or isSib: vnum_keys.sort ()
         lvc = min (vnum_keys or [1])	# lowest xml voice number of this part
         for iv in vnum_keys:
-            if s.cnt.getv ('note', iv) == 0:    # no real notes counted in this voice
-                continue            # skip empty voices
+            if s.cnt.getv ('note', iv) == 0 and not s.wev:  # no real notes counted in this voice
+                continue            # skip empty voices if s.wev is false (with empty voices)
             if abcOut.denL: unitL = abcOut.denL # take the unit length from the -d option
             else:           unitL = compUnitLength (iv, s.gMaten, divs) # compute the best unit length for this voice
             abcOut.cmpL.append (unitL)  # remember for header output
@@ -337,7 +339,7 @@ class Music:
             s.vceCnt += 1           # count voices over all parts
         s.gMaten = []               # reset the follwing instance vars for each part
         s.gLyrics = []
-        s.cnt.prcnt (ip+1)          # print summary of skipped items in this part
+        s.cnt.prcnt (ip+1, s.wev)          # print summary of skipped items in this part
         return vvmap
 
 class ABCoutput:
@@ -660,6 +662,7 @@ def sortMeasure (voice, m):
     time = 0
     v = []
     rs = []                            # holds rests in between notes
+    ixl = 0;                           # index in v of last note
     for i, nx in enumerate (voice):    # establish sequentiality
         if nx.tijd > time and chkbug (nx.tijd - time, m):
             v.append (Note (nx.tijd - time, 'x'))   # fill hole with invisble rest
@@ -671,13 +674,13 @@ def sortMeasure (voice, m):
             continue
         if nx.tijd < time:                  # overlapping element
             if nx.ns[0] == 'z': continue    # discard overlapping rest
-            if v[-1].tijd <= nx.tijd:       # we can do something
-                if v[-1].ns[0] == 'z':      # shorten rest
-                    v[-1].dur = nx.tijd - v[-1].tijd
-                    if v[-1].dur == 0: del v[-1]        # nothing left
+            if v[ixl].tijd <= nx.tijd:      # we can do something
+                if v[ixl].ns[0] == 'z':     # shorten rest
+                    v[ixl].dur = nx.tijd - v[ixl].tijd
+                    if v[ixl].dur == 0: del v[ixl]        # nothing left
                     info ('overlap in part %d, measure %d: rest shortened' % (m.ixp+1, m.ixm+1))
                 else:                       # make a chord of overlap
-                    v[-1].ns += nx.ns
+                    v[ixl].ns += nx.ns
                     info ('overlap in part %d, measure %d: added chord' % (m.ixp+1, m.ixm+1))
                     nx.dur = (nx.tijd + nx.dur) - time  # the remains
                     if nx.dur <= 0: continue            # nothing left
@@ -687,6 +690,7 @@ def sortMeasure (voice, m):
                 continue
         v.append (nx)
         if isinstance (nx, Note):
+            ixl = len (v) - 1               # remember index of last note
             if nx.ns [0] in 'zx':
                 rs.append (len (v) - 1)     # remember rests between notes
             elif len (rs):
@@ -1180,8 +1184,8 @@ class Parser:
                 s.stemDir [v] = stemdir
                 s.msc.appendElem (v, '[I:stemdir %s]' % stemdir)
         if chord: s.msc.addChord (note, noot)
-        else:
-            if s.curStf [v] != xmlstaff:    # the note should go to another staff
+        else:                                                          # see if the note should go to another staff
+            if s.curStf [v] != xmlstaff and s.stfMap [xmlstaff] != []: # and that staff carries a voice
                 dstaff = xmlstaff - s.curStf [v]    # relative new staff number
                 s.curStf [v] = xmlstaff     # remember the new staff for this voice
                 s.msc.appendElem (v, '[I:staff %+d]' % dstaff)  # insert a move before the note
@@ -1328,13 +1332,19 @@ class Parser:
         t = e.find ('sound')        # there are many possible attributes for sound
         if t != None:
             minst = t.find ('midi-instrument')
-            if minst:
+            if minst != None:
                 prg = t.findtext ('midi-instrument/midi-program')
                 chn = t.findtext ('midi-instrument/midi-channel')
                 vids = [v for v, id in s.vceInst.items () if id == minst.get ('id')]
                 if vids: vs = vids [0]          # direction for the indentified voice, not the staff
                 parm, inst = ('program', str (int (prg) - 1)) if prg else ('channel', chn)
                 if inst and abcOut.volpan > 0: s.msc.appendElem (vs, '[I:MIDI= %s %s]' % (parm, inst))
+            scinst = t.find ('instrument-change/score-instrument') # musescore
+            if scinst != None:
+                instid = scinst.get ('id')  # xml ID of the score-instrument
+                chn, prg, vol, pan = s.instMid [s.msr.ixp][instid]  # midi values for the ID
+                _, vs, _ = s.findVoice (i, es)  # voice of the next note in the current measure
+                if abcOut.volpan > 0: s.msc.appendElem (vs, '[I:MIDI= %s %s]' % ('program', prg -1))
             tempo = t.get ('tempo') # look for tempo attribute
             if tempo:
                 tempo = '%.0f' % float (tempo) # hope it is a number and insert in voice 1
@@ -1704,6 +1714,7 @@ if __name__ == '__main__':
     parser.add_option ("--temp", action="store", type="int", help="temperament for microtonal accidentals (0,1,2)", dest='temp', default=0)
     parser.add_option ("--rbm", action="store_true", help="re-beam all measures", dest='rbm', default=False)
     parser.add_option ("--nbr", action="store_true", help="do not introdude broken rhythm", dest='nbr', default=False)
+    parser.add_option ("--wev", action="store_true", help="with empty voices", dest='wev', default=False)
     options, args = parser.parse_args ()
     if options.n < 0: parser.error ('only values >= 0')
     if options.b < 0: parser.error ('only values >= 0')
