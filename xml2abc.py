@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 110
+VERSION = 111
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -143,11 +143,14 @@ class Note:
         s.lyrs = {}     # {number -> syllabe}
         s.tab = None    # (string number, fret number)
         s.ntdec = ''    # !string!, !courtesy!
+        s.xmlstf = 1    # xml staff number
+        s.xmlvce = 1    # xml voice number
 
 class Elem:
-    def __init__ (s, string):
+    def __init__ (s, string, stf = -1):
         s.tijd = 0      # the time in XML division units
         s.str = string  # any abc string that is not a note
+        s.xmlstf = stf
 
 class Counter:
     def inc (s, key, voice): s.counters [key][voice] = s.counters [key].get (voice, 0) + 1
@@ -245,7 +248,7 @@ class Music:
                 s.lastnote.before += [d]
         s.lastnote.ns.append (note.ntdec + noot)
 
-    def addBar (s, lbrk, m): # linebreak, measure data
+    def addBar (s, lbrk, m, balken, isSib): # linebreak, measure data, staff allocations
         if m.mdur and s.maxtime > m.mdur: info ('measure %d in part %d longer than metre' % (m.ixm+1, m.ixp+1))
         s.tijd = s.maxtime              # the time of the bar lines inserted here
         for v in s.vnums:
@@ -269,7 +272,7 @@ class Music:
             if m.attr:                  # insert signatures at front of buffer
                 s.insertElem (v, '%s' % m.attr)
             s.appendElem (v, ' %s' % m.rline)   # insert current barline record at time maxtime
-            s.voices[v] = sortMeasure (s.voices[v], m)  # make all times consistent
+            s.voices[v] = sortMeasure (s.voices[v], m, balken, isSib, v)  # make all times consistent
             lyrs = s.lyrics[v]          # [{number: sylabe}, .. for all notes]
             lyrdict = {}                # {number: (abc_lyric_string, melis)} for this voice
             nums = [num for d in lyrs for num in d.keys ()] # the lyrics numbers in this measure
@@ -656,38 +659,58 @@ def outVoice (measure, divs, im, ip, unitL, rebeam, metrum):    # note/elem obje
     while vs.find ('!8va(!!8va)!') >= 0: vs = vs.replace ('!8va(!!8va)!','')    # remove empty ottava's
     return vs
 
-def sortMeasure (voice, m):
+def elemToNewVoice (nx, balken, balkvce, lastStaffChange, v, vtijd):
+    curstf = balken [balkvce]
+    if nx.xmlstf > 0 and nx.xmlstf != curstf:   # staff change needed
+        lastStaffChange = (len (v), curstf)     # (index in v of this change element e, current staff)
+        dstaff = nx.xmlstf - curstf     # relative new staff number
+        balken [balkvce] = nx.xmlstf    # the new staff for this voice
+        e = Elem ('[I:staff %+d]' % dstaff)
+        e.tijd = vtijd
+        v.append (e)  # insert a staff change before the note or Elem (nx)
+    else: lastStaffChange = ()  # reset when no change was needed for nx
+    v.append (nx)
+    return lastStaffChange
+
+def sortMeasure (voice, m, balken, isSib, balkvce):
     voice.sort (key=lambda o: o.tijd)   # sort on time
-    time = 0
-    v = []
+    vtijd = 0
+    v = []                             # new sorted voice
     rs = []                            # holds rests in between notes
-    ixl = 0;                           # index in v of last note
+    ixl = 0                            # index in v of last note
+    lastStaffChange = ()               # (index in v of change, change value)
     for i, nx in enumerate (voice):    # establish sequentiality
-        if nx.tijd > time and chkbug (nx.tijd - time, m):
-            v.append (Note (nx.tijd - time, 'x'))   # fill hole with invisble rest
+        if nx.tijd > vtijd and chkbug (nx.tijd - vtijd, m):
+            v.append (Note (nx.tijd - vtijd, 'x'))   # fill hole with invisble rest
             rs.append (len (v) - 1)
         if isinstance (nx, Elem):
-            if nx.tijd < time: nx.tijd = time # shift elems without duration to where they fit
-            v.append (nx)
-            time = nx.tijd
+            if nx.tijd < vtijd: nx.tijd = vtijd # shift elems without duration to where they fit
+            elemToNewVoice (nx, balken, balkvce, lastStaffChange, v, vtijd)
+            vtijd = nx.tijd
             continue
-        if nx.tijd < time:                  # overlapping element
+        balkvce = nx.xmlvce + (100 * nx.xmlstf) if isSib else nx.xmlvce
+        if nx.tijd < vtijd:                  # overlapping element
             if nx.ns[0] == 'z': continue    # discard overlapping rest
             if v[ixl].tijd <= nx.tijd:      # we can do something
                 if v[ixl].ns[0] == 'z':     # shorten rest
                     v[ixl].dur = nx.tijd - v[ixl].tijd
-                    if v[ixl].dur == 0: del v[ixl]        # nothing left
+                    if v[ixl].dur == 0: 
+                        del v[ixl]          # nothing left
+                        if lastStaffChange: # also delete possible staff change element
+                            iv, cstf = lastStaffChange  # caused by the (now deleted) rest
+                            del v[iv]
+                            balken [balkvce] = cstf
                     info ('overlap in part %d, measure %d: rest shortened' % (m.ixp+1, m.ixm+1))
                 else:                       # make a chord of overlap
                     v[ixl].ns += nx.ns
                     info ('overlap in part %d, measure %d: added chord' % (m.ixp+1, m.ixm+1))
-                    nx.dur = (nx.tijd + nx.dur) - time  # the remains
+                    nx.dur = (nx.tijd + nx.dur) - vtijd # the remains
                     if nx.dur <= 0: continue            # nothing left
-                    nx.tijd = time          # append remains
+                    nx.tijd = vtijd         # append remains
             else:                           # give up
                 info ('overlapping notes in one voice! part %d, measure %d, note %s discarded' % (m.ixp+1, m.ixm+1, isinstance (nx, Note) and nx.ns or nx.str))
                 continue
-        v.append (nx)
+        lastStaffChange = elemToNewVoice (nx, balken, balkvce, lastStaffChange, v, vtijd)
         if isinstance (nx, Note):
             ixl = len (v) - 1               # remember index of last note
             if nx.ns [0] in 'zx':
@@ -696,10 +719,10 @@ def sortMeasure (voice, m):
                 if nx.beam and not nx.grace:    # copy beam into rests
                     for j in rs: v[j].beam = nx.beam
                 rs = []                     # clear rests on each note
-        time = nx.tijd + nx.dur
+        vtijd = nx.tijd + nx.dur
     #   when a measure contains no elements and no forwards -> no incTime -> s.maxtime = 0 -> right barline
-    #   is inserted at time == 0 (in addbar) and is only element in the voice when sortMeasure is called
-    if time == 0: info ('empty measure in part %d, measure %d, it should contain at least a rest to advance the time!' % (m.ixp+1, m.ixm+1))
+    #   is inserted at vtijd == 0 (in addbar) and is only element in the voice when sortMeasure is called
+    if vtijd == 0: info ('empty measure in part %d, measure %d, it should contain at least a rest to advance the time!' % (m.ixp+1, m.ixm+1))
     return v
 
 def getPartlist (ps):   # correct part-list (from buggy xml-software)
@@ -1115,6 +1138,8 @@ class Parser:
         note = Note ()
         v = int (n.findtext ('voice', '1'))
         xmlstaff = int (n.findtext ('staff', '1'))
+        note.xmlvce = v
+        note.xmlstf = xmlstaff
         if s.isSib: v += 100 * xmlstaff  # repair bug in Sibelius
         chord = n.find ('chord') != None
         p = n.findtext ('pitch/step') or n.findtext ('unpitched/display-step')
@@ -1183,12 +1208,7 @@ class Parser:
                 s.stemDir [v] = stemdir
                 s.msc.appendElem (v, '[I:stemdir %s]' % stemdir)
         if chord: s.msc.addChord (note, noot)
-        else:                                                          # see if the note should go to another staff
-            if s.curStf [v] != xmlstaff and s.stfMap [xmlstaff] != []: # and that staff carries a voice
-                dstaff = xmlstaff - s.curStf [v]    # relative new staff number
-                s.curStf [v] = xmlstaff     # remember the new staff for this voice
-                s.msc.appendElem (v, '[I:staff %+d]' % dstaff)  # insert a move before the note
-            s.msc.appendNote (v, note, noot)
+        else:     s.msc.appendNote (v, note, noot)
         for slur in n.findall ('notations/slur'):   # s.msc.lastnote points to the last real note/chord inserted above
             s.matchSlur (slur.get ('type'), slur.get ('number'), v, s.msc.lastnote, note.grace, stopgrace) # match slur definitions
 
@@ -1266,11 +1286,8 @@ class Parser:
             else:
                 voices = s.stfMap[n]            # clef change to all voices of staff n
                 for v in voices:
-                    if n != s.curStf [v]:       # voice is not at its home staff n
-                        dstaff = n - s.curStf [v]
-                        s.curStf [v] = n        # reset current staff at start of measure to home position
-                        s.msc.appendElem (v, '[I:staff %+d]' % dstaff)
-                    s.msc.appendElem (v, '[K:%s]' % cs)
+                    elem = Elem ('[K:%s]' % cs, n)  # n == staff of clef, for possible staff change in sortMeasure
+                    s.msc.appendObj (v, elem, 0)
 
     def findVoice (s, i, es):
         stfnum = int (es[i].findtext ('staff',1))   # directions belong to a staff
@@ -1662,7 +1679,7 @@ class Parser:
                         dt = int (e.findtext ('duration'))
                         if chkbug (dt, s.msr): s.msc.incTime (dt)
                     elif e.tag == 'print':  lbrk = s.doPrint (e)
-                s.msc.addBar (lbrk, s.msr)
+                s.msc.addBar (lbrk, s.msr, s.curStf, s.isSib)
                 s.maatRecs.append (s.msr);
                 if herhaal == 1:
                     herhaalMaat = im
