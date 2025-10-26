@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 112
+VERSION = 113
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -975,7 +975,7 @@ class Parser:
             type1, v1, note1, grace1 = s.slurBuf [n]
             if type2 != type1:              # slur complete, now check the voice
                 if v2 == v1:                # begins and ends in the same voice: keep it
-                    if type1 == 'start' and (not grace1 or not stopgrace):  # normal slur: start before stop and no grace slur
+                    if type1 == 'start':    # start before stop
                         note1.before = ['('] + note1.before # keep left-right order!
                         note2.after += ')'
                     # no else: don't bother with reversed stave spanning slurs
