@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 111
+VERSION = 112
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -132,6 +132,7 @@ class Note:
     def __init__ (s, dur=0, n=None):
         s.tijd = 0      # the time in XML division units
         s.dur = dur     # duration of a note in XML divisions
+        s.type = ''     # xml note type (for values see Parser.note_type)
         s.fact = None   # time modification for tuplet notes (num, div)
         s.tup = ['']    # start(s) and/or stop(s) of tuplet
         s.tupabc = ''   # abc tuplet string to issue before note
@@ -482,8 +483,11 @@ def simplify (a, b):    # divide a and b by their greatest common divisor
     return x // a, y // a
 
 def abcdur (nx, divs, uL):      # convert an musicXML duration d to abc units with L:1/uL
-    if nx.dur == 0: return ''   # when called for elements without duration
+    if nx.dur == 0 and not nx.grace:
+        return ''   # when called for elements without duration
     num, den = simplify (uL * nx.dur, divs * 4) # L=1/8 -> uL = 8 units
+    if nx.grace:    # nx.type = whole, half, quarter, .. == 1,2,4, .. for {AA} and 2,4,8, .. for {A}
+        num, den = simplify (16, nx.type or uL)
     if nx.fact:                 # apply tuplet time modification
         numfac, denfac = nx.fact
         num, den = simplify (num * numfac, den * denfac)
@@ -919,12 +923,14 @@ class Parser:
         'sharp':3, 'sharp-up':4 }
     edomap = { 'flat-down':-8, 'flat-up':-3, 'natural-down':-2, 'natural-up':2, 'sharp-down':3, 'sharp-up':8 }
     edomix = { 'flat-down':-4, 'flat-up':-2, 'natural-down':-1, 'natural-up':1, 'sharp-down':2, 'sharp-up':4 }
+    note_type = { 'whole':1, 'half':2, 'quarter':4, 'eighth':8, '16th':16, '32nd':32, '64th':64 }
 
     def __init__ (s, options):
         # unfold repeats, number of chars per line, credit filter level, volta option
         s.slurBuf = {}    # dict of open slurs keyed by slur number
         s.dirStk = {}     # {direction-type + number -> (type, voice | time)} dict for proper closing
         s.ingrace = 0     # marks a sequence of grace notes
+        s.grcNotes = []   # notes in current grace sequence
         s.msc = Music (options)  # global music data abstraction
         s.unfold = options.u    # turn unfolding repeats on
         s.ctf = options.c       # credit text filter level
@@ -1151,8 +1157,10 @@ class Parser:
             note.fact = (int (numer), int (denom))
         note.tup = [x.get ('type') for x in n.findall ('notations/tuplet')]
         dur = n.findtext ('duration')
+        note.type = s.note_type.get (n.findtext ('type', ''), 0)
         grc = n.find ('grace')
         note.grace = grc != None
+        if note.grace and not chord: s.grcNotes.append (note)
         note.before, note.after = [], '' # strings with ABC stuff that goes before or after a note/chord
         if note.grace and not s.ingrace: # open a grace sequence
             s.ingrace = 1
@@ -1160,6 +1168,8 @@ class Parser:
             if grc.get ('slash') == 'yes': note.before += ['/'] # acciaccatura
         stopgrace = not note.grace and s.ingrace
         if stopgrace:                   # close the grace sequence
+            if len (s.grcNotes) == 1: s.grcNotes [0].type *= 2  # L == 1/8 for {A} or 1/16 for {AA..}
+            s.grcNotes = []
             s.ingrace = 0
             s.msc.lastnote.after += '}' # close grace on lastenote.after
         if dur == None or note.grace: dur = 0
