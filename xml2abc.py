@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 113
+VERSION = 114
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -1715,7 +1715,7 @@ class Parser:
 def vertaal (xmltxt, **options_parm):
     class options:  # the default option values
         u=0; b=0; n=0; c=0; v=0; d=0; m=0; x=0; t=0; fin=-1; rbm=0;
-        stm=0; mnum=-1; temp=0; p='f'; s=0; j=0; v1=0; ped=0; nbr=0;
+        stm=0; mnum=-1; temp=0; p='f'; s=0; j=0; v1=0; ped=0; nbr=0; wev=0;
     global abcOut, info_list
     info_list = []; str = ''
     for opt in options_parm:        # assign the given options
