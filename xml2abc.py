@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 114
+VERSION = 115
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -1162,10 +1162,11 @@ class Parser:
         note.grace = grc != None
         if note.grace and not chord: s.grcNotes.append (note)
         note.before, note.after = [], '' # strings with ABC stuff that goes before or after a note/chord
+        isTab = s.curClef and s.curClef.get (s.curStf [v], '').startswith ('tab')
         if note.grace and not s.ingrace: # open a grace sequence
             s.ingrace = 1
             note.before = ['{']
-            if grc.get ('slash') == 'yes': note.before += ['/'] # acciaccatura
+            if grc.get ('slash') == 'yes' and not isTab: note.before += ['/'] # acciaccatura
         stopgrace = not note.grace and s.ingrace
         if stopgrace:                   # close the grace sequence
             if len (s.grcNotes) == 1: s.grcNotes [0].type *= 2  # L == 1/8 for {A} or 1/16 for {AA..}
@@ -1180,7 +1181,6 @@ class Parser:
         if r == None and (not p or not o):  # not a rest and no pitch
             s.msc.cnt.inc ('nopt', v)       # count unpitched notes
             o, p = 5,'E'                    # make it an E5 ??
-        isTab = s.curClef and s.curClef.get (s.curStf [v], '').startswith ('tab')
         nttn = n.find ('notations')     # add ornaments
         if nttn != None: s.doNotations (note, nttn, isTab)
         e = n.find ('stem') if r == None else None  # no !stemless! before rest
