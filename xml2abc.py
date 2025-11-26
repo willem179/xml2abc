@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 115
+VERSION = 116
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -120,7 +120,7 @@ class Measure:
     def __init__ (s, p, im, mv):    # mv = vorige maat
         s.ixp = p       # part number  
         s.ixm = im      # measure number
-        s.mdur = 0      # measure duration (nominal metre value in divisions)
+        s.mdur = mv.mdur if mv else 0      # measure duration (nominal metre value in divisions)
         s.divs = mv.divs if mv else 1      # number of divisions per 1/4
         s.mtr =  mv.mtr  if mv else (4,4)  # metrum
         s.attr = ''     # measure signatures, tempo
@@ -726,7 +726,13 @@ def sortMeasure (voice, m, balken, isSib, balkvce):
         vtijd = nx.tijd + nx.dur
     #   when a measure contains no elements and no forwards -> no incTime -> s.maxtime = 0 -> right barline
     #   is inserted at vtijd == 0 (in addbar) and is only element in the voice when sortMeasure is called
-    if vtijd == 0: info ('empty measure in part %d, measure %d, it should contain at least a rest to advance the time!' % (m.ixp+1, m.ixm+1))
+    if vtijd == 0: 
+        info ('empty measure in part %d, measure %d, it should contain at least a rest to advance the time!' % (m.ixp+1, m.ixm+1))
+        n = Note (m.mdur, 'z')  # probeer te repareren met volle maat rust
+        bar = v[-1]
+        if isinstance (bar, Elem) and re.search (r'[|:\]]', bar.str) != None:   # test maatstreep
+            bar.tijd = m.mdur   # zet de eindtijd goed
+            v = v[:-1] + [n, bar]
     return v
 
 def getPartlist (ps):   # correct part-list (from buggy xml-software)
@@ -1269,7 +1275,10 @@ class Parser:
                     del s.repeat_str [n]        # remove closed repeats
         toct = e.findtext ('transpose/octave-change', '')
         if toct: steps += 12 * int (toct)       # extra transposition of toct octaves
-        for clef in e.findall ('clef'):         # a part can have multiple staves
+        stfdetails = {}
+        for x in e.findall ('staff-details'):   # dict geindiceerd met balk nummer
+            stfdetails [int (x.get ('number', '1'))] = x
+        for i, clef in enumerate (e.findall ('clef')):  # a part can have multiple staves
             n = int (clef.get ('number', '1'))  # local staff number for this clef
             sgn = clef.findtext ('sign')
             line = clef.findtext ('line', '') if sgn not in ['percussion','TAB'] else ''
@@ -1277,9 +1286,9 @@ class Parser:
             oct = clef.findtext ('clef-octave-change', '') or '0'
             if oct: cs += {-2:'-15', -1:'-8', 1:'+8', 2:'+15'}.get (int (oct), '')
             s.clefOct [n] = -int (oct);         # xml playback pitch -> abc notation pitch
-            if steps: cs += ' transpose=' + str (steps)
-            stfdtl = e.find ('staff-details')
-            if stfdtl != None and int (stfdtl.get ('number', '1')) == n:
+            if steps and sgn != 'TAB': cs += ' transpose=' + str (steps) # geen transpositie in tab balk
+            stfdtl = stfdetails.get (n, None);  # <staff-details> voor balk n
+            if stfdtl != None:
                 lines = stfdtl.findtext ('staff-lines')
                 if lines:
                     lns= '|||' if lines == '3' and sgn == 'TAB' else lines
