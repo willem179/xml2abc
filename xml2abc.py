@@ -237,9 +237,10 @@ class Music:
             if not note.grace:                  # for every real note
                 s.lyrics[v].append (note.lyrs)  # even when it has no lyrics
 
-    def appendChordsym (s, v, chsym):
+    def appendChordsym (s, v, chsym, offset_p):
         e = Elem (chsym)
         e.chsym = 1
+        e.offset = offset_p
         s.appendObj (v, e, 0)
         s.cnt.inc ('note', v)   # chordsyms counted as notes
 
@@ -673,8 +674,11 @@ def outVoice (measure, chords, divs, unitL, rebeam, metrum):    # note/elem obje
                 ch.dur = ch.tijd - tvor # duration of the chord symbol in the overlay
                 ch.grace = 0    # make ch suitable for abcdur
                 ch.fact = 0
-                durstr = abcdur (ch, divs, unitL)
-                overlay.append ('x' + durstr + ch.str)
+                if ch.dur == 0: # no x needed
+                    overlay.append (ch.str)
+                else:           # prepend x to position chord
+                    durstr = abcdur (ch, divs, unitL)
+                    overlay.append ('x' + durstr + ch.str)
                 tvor = ch.tijd
             if overlay:
                 ch.dur = nx.tijd - tvor # reuse last chord, nx.tijd is time of bar line == measure duration
@@ -710,25 +714,29 @@ def elemToNewVoice (nx, balken, balkvce, lastStaffChange, v, vtijd):
 def sortMeasure (voice, m, balken, isSib, balkvce):
     voice.sort (key=lambda o: o.tijd)   # sort on time
     vtijd = 0
-    v = []                             # new sorted voice
-    chvce = []                         # extra voice for chords
-    rs = []                            # holds rests in between notes
-    ixl = 0                            # index in v of last note
-    lastStaffChange = ()               # (index in v of change, change value)
-    for i, nx in enumerate (voice):    # establish sequentiality
+    v = []                              # new sorted voice
+    chvce = []                          # extra voice for chords
+    rs = []                             # holds rests in between notes
+    ixl = 0                             # index in v of last note
+    lastStaffChange = ()                # (index in v of change, change value)
+    for i, nx in enumerate (voice):     # establish sequentiality
         if nx.tijd > vtijd and chkbug (nx.tijd - vtijd, m):
             v.append (Note (nx.tijd - vtijd, 'x'))   # fill hole with invisble rest
             rs.append (len (v) - 1)
         if isinstance (nx, Elem):
+            if nx.chsym and nx.offset:  # consider as overlapping
+                nx.tijd += int (float (nx.offset))  # offset may be a float, though divisions are not
+                chvce.append (nx)       # store overlapping chord symbols for use in outvoice()
+                continue
             if nx.chsym and nx.tijd < vtijd:    # chord symbol overlaps a current note
-                chvce.append (nx)      # store overlapping chord symbols for use in outvoice()
+                chvce.append (nx)       # as above
                 continue
             elif nx.tijd < vtijd: nx.tijd = vtijd # shift elems without duration to where they fit
             elemToNewVoice (nx, balken, balkvce, lastStaffChange, v, vtijd)
             vtijd = nx.tijd
             continue
         balkvce = nx.xmlvce + (100 * nx.xmlstf) if isSib else nx.xmlvce
-        if nx.tijd < vtijd:                  # overlapping element
+        if nx.tijd < vtijd:                 # overlapping element
             if nx.ns[0] == 'z': continue    # discard overlapping rest
             if v[ixl].tijd <= nx.tijd:      # we can do something
                 if v[ixl].ns[0] == 'z':     # shorten rest
@@ -1487,7 +1495,8 @@ class Parser:
             kind += altmap.get (d.findtext ('degree-alter'),'') + d.findtext ('degree-value','')
         kind = kind.replace ('79','9').replace ('713','13').replace ('maj6','6')
         bass = e.findtext ('bass/bass-step','') + altmap.get (e.findtext ('bass/bass-alter'),'') 
-        s.msc.appendChordsym (vt, '"%s%s%s%s%s"' % (root, alt, kind, sus, bass and '/' + bass))
+        offset = e.findtext ('offset', '')
+        s.msc.appendChordsym (vt, '"%s%s%s%s%s"' % (root, alt, kind, sus, bass and '/' + bass), offset)
 
     def doBarline (s, e):       # 0 = no repeat, 1 = begin repeat, 2 = end repeat
         rep = e.find ('repeat')
