@@ -17,7 +17,7 @@ try:    import xml.etree.cElementTree as E
 except: import xml.etree.ElementTree as E
 import os, sys, types, re, math
 
-VERSION = 116
+VERSION = 117
 
 python3 = sys.version_info.major > 2
 if python3:
@@ -152,6 +152,8 @@ class Elem:
         s.tijd = 0      # the time in XML division units
         s.str = string  # any abc string that is not a note
         s.xmlstf = stf
+        s.chsym = 0     # 1 if chord symbol
+        s.isbar = 0     # 1 if right bar line
 
 class Counter:
     def inc (s, key, voice): s.counters [key][voice] = s.counters [key].get (voice, 0) + 1
@@ -174,6 +176,7 @@ class Music:
         s.maxtime = 0           # maximum time in a measure
         s.gMaten = []           # [voices,.. for all measures in a part]
         s.gLyrics = []          # [{num: (abc_lyric_string, melis)},.. for all measures in a part]
+        s.gChSyms = []          # [chord symbols for each voice for alle measures in a part]
         s.vnums = {}            # all used voice id's in a part (xml voice id's == numbers)
         s.wev = options.wev     # output empty voices
         s.cnt = Counter ()      # global counter object
@@ -188,11 +191,12 @@ class Music:
         s.nbr = options.nbr     # do not introdude broken rhythm (for comparison purpose)
 
     def initVoices (s, newPart=0):
-        s.vtimes, s.voices, s.lyrics = {}, {}, {}
+        s.vtimes, s.voices, s.lyrics, s.chrdvs = {}, {}, {}, {}
         for v in s.vnums:
             s.vtimes [v] = 0    # {voice: the end time of the last item in each voice}
             s.voices [v] = []   # {voice: [Note|Elem, ..]}
             s.lyrics [v] = []   # {voice: [{num: syl}, ..]}
+            s.chrdvs [v] = []   # {voice: [Elem, Elem]}, Elem is a chord symbol
         if newPart: s.cnt.clear (s.vnums)   # clear counters once per part
 
     def incTime (s, dt):
@@ -233,6 +237,12 @@ class Music:
             if not note.grace:                  # for every real note
                 s.lyrics[v].append (note.lyrs)  # even when it has no lyrics
 
+    def appendChordsym (s, v, chsym):
+        e = Elem (chsym)
+        e.chsym = 1
+        s.appendObj (v, e, 0)
+        s.cnt.inc ('note', v)   # chordsyms counted as notes
+
     def getLastRec (s, voice):
         if s.gMaten: return s.gMaten[-1][voice][-1] # the last record in the last measure
         return None                                 # no previous records in the first measure
@@ -272,8 +282,10 @@ class Music:
                 if p: p.str += lbrk     # insert linebreak char after the barlines+volta
             if m.attr:                  # insert signatures at front of buffer
                 s.insertElem (v, '%s' % m.attr)
-            s.appendElem (v, ' %s' % m.rline)   # insert current barline record at time maxtime
-            s.voices[v] = sortMeasure (s.voices[v], m, balken, isSib, v)  # make all times consistent
+            rbelm = Elem (' %s' % m.rline)
+            rbelm.isbar = 1             # mark as a barline
+            s.appendObj (v, rbelm, 0)   # insert current barline record at time maxtime
+            s.voices[v], s.chrdvs[v] = sortMeasure (s.voices[v], m, balken, isSib, v)  # make all times consistent
             lyrs = s.lyrics[v]          # [{number: sylabe}, .. for all notes]
             lyrdict = {}                # {number: (abc_lyric_string, melis)} for this voice
             nums = [num for d in lyrs for num in d.keys ()] # the lyrics numbers in this measure
@@ -286,6 +298,7 @@ class Music:
             if not s.nbr: mkBroken (s.voices[v])    # make broken rhythms
         s.gMaten.append (s.voices)
         s.gLyrics.append (s.lyrics)
+        s.gChSyms.append (s.chrdvs)
         s.tijd = s.maxtime = 0
         s.initVoices ()
 
@@ -305,7 +318,8 @@ class Music:
             vn, vl = [], {}         # for voice iv: collect all notes to vn and all lyric lines to vl
             for im in range (len (s.gMaten)):
                 measure = s.gMaten [im][iv]
-                vn.append (outVoice (measure, divs [im], im, ip, unitL, s.rbm, metra [im]))
+                chords = s.gChSyms [im][iv] # retrieve overlapping chord symbols
+                vn.append (outVoice (measure, chords, divs [im], unitL, s.rbm, metra [im]))
                 checkMelismas (s.gLyrics, s.gMaten, im, iv)
                 for n, (lyrstr, melis) in s.gLyrics [im][iv].items ():
                     if n in vl:
@@ -342,6 +356,7 @@ class Music:
             s.vceCnt += 1           # count voices over all parts
         s.gMaten = []               # reset the follwing instance vars for each part
         s.gLyrics = []
+        s.gChSyms = []
         s.cnt.prcnt (ip+1, s.wev)          # print summary of skipped items in this part
         return vvmap
 
@@ -620,7 +635,7 @@ def bpltel (nx, divs, metrum):
             tel = int (tel // 3)
     return tel, noemer
 
-def outVoice (measure, divs, im, ip, unitL, rebeam, metrum):    # note/elem objects of one measure in one voice
+def outVoice (measure, chords, divs, unitL, rebeam, metrum):    # note/elem objects of one measure in one voice
     ix = 0
     while ix < len (measure):   # set all (nested) tuplet annotations
         nx = measure [ix]
@@ -651,6 +666,22 @@ def outVoice (measure, divs, im, ip, unitL, rebeam, metrum):    # note/elem obje
                 if not nospace and nx.tijd % noemer != 0:  # eerste noot in de volgende tel
                     nospace = True;         # valt niet precies op de tel
             telvor = tel; durvor = nx.dur;
+        elif nx.isbar:
+            overlay = []
+            tvor = 0
+            for ch in chords:   # translate overlapping chord symbols as ABC overlay   
+                ch.dur = ch.tijd - tvor # duration of the chord symbol in the overlay
+                ch.grace = 0    # make ch suitable for abcdur
+                ch.fact = 0
+                durstr = abcdur (ch, divs, unitL)
+                overlay.append ('x' + durstr + ch.str)
+                tvor = ch.tijd
+            if overlay:
+                ch.dur = nx.tijd - tvor # reuse last chord, nx.tijd is time of bar line == measure duration
+                durstr = abcdur (ch, divs, unitL)   # fills the measure
+                vs = vs + ['&'] + overlay + ['x' + durstr]
+            s = nx.str
+            nospace = 1 # the barline already has a leading space
         else:
             if isinstance (nx.str, listtype): nx.str = nx.str [0]
             s = nx.str
@@ -680,6 +711,7 @@ def sortMeasure (voice, m, balken, isSib, balkvce):
     voice.sort (key=lambda o: o.tijd)   # sort on time
     vtijd = 0
     v = []                             # new sorted voice
+    chvce = []                         # extra voice for chords
     rs = []                            # holds rests in between notes
     ixl = 0                            # index in v of last note
     lastStaffChange = ()               # (index in v of change, change value)
@@ -688,7 +720,10 @@ def sortMeasure (voice, m, balken, isSib, balkvce):
             v.append (Note (nx.tijd - vtijd, 'x'))   # fill hole with invisble rest
             rs.append (len (v) - 1)
         if isinstance (nx, Elem):
-            if nx.tijd < vtijd: nx.tijd = vtijd # shift elems without duration to where they fit
+            if nx.chsym and nx.tijd < vtijd:    # chord symbol overlaps a current note
+                chvce.append (nx)      # store overlapping chord symbols for use in outvoice()
+                continue
+            elif nx.tijd < vtijd: nx.tijd = vtijd # shift elems without duration to where they fit
             elemToNewVoice (nx, balken, balkvce, lastStaffChange, v, vtijd)
             vtijd = nx.tijd
             continue
@@ -733,7 +768,7 @@ def sortMeasure (voice, m, balken, isSib, balkvce):
         if isinstance (bar, Elem) and re.search (r'[|:\]]', bar.str) != None:   # test maatstreep
             bar.tijd = m.mdur   # zet de eindtijd goed
             v = v[:-1] + [n, bar]
-    return v
+    return v, chvce
 
 def getPartlist (ps):   # correct part-list (from buggy xml-software)
     xs = [] # the corrected part-list
@@ -1452,7 +1487,7 @@ class Parser:
             kind += altmap.get (d.findtext ('degree-alter'),'') + d.findtext ('degree-value','')
         kind = kind.replace ('79','9').replace ('713','13').replace ('maj6','6')
         bass = e.findtext ('bass/bass-step','') + altmap.get (e.findtext ('bass/bass-alter'),'') 
-        s.msc.appendElem (vt, '"%s%s%s%s%s"' % (root, alt, kind, sus, bass and '/' + bass), 1)
+        s.msc.appendChordsym (vt, '"%s%s%s%s%s"' % (root, alt, kind, sus, bass and '/' + bass))
 
     def doBarline (s, e):       # 0 = no repeat, 1 = begin repeat, 2 = end repeat
         rep = e.find ('repeat')
