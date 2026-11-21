@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # coding=latin-1
 '''
-Copyright (C) 2012-2025: W.G. Vree
+Copyright (C) 2012-2026: W.G. Vree
 Contributions: M. Tarenskeen, N. Liberg, Paul Villiger, Janus Meuris, Larry Myerscough, 
 Dick Jackson, Jan Wybren de Jong, Mark Zealey, Avik Topchyan
 
 This program is free software; you can redistribute it and/or modify it under the terms of the
-Lesser GNU General Public License as published by the Free Software Foundation;
+GNU General Public License (version 3) as published by the Free Software Foundation;
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
 without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-See the Lesser GNU General Public License for more details. <http://www.gnu.org/licenses/lgpl.html>.
+See the GNU General Public License (GPLv3) for more details. <https://www.gnu.org/licenses/gpl-3.0.html>.
 '''
 
 try:    import xml.etree.cElementTree as E
